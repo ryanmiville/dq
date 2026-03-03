@@ -1,6 +1,6 @@
 mod data_type;
 
-use anyhow::{Context, Ok, Result};
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use data_type::DataType;
 use duckdb::Connection;

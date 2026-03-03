@@ -28,6 +28,6 @@ impl DataType {
         };
         connection
             .execute_batch(sql)
-            .context("failed to convert stdin to arrow")
+            .context("failed to convert stdin to output format")
     }
 }
