@@ -37,6 +37,7 @@ We will need to think carefully about how we want to represent the table after i
 - `dq where [clause]`
 - `dq order by [columns (optional direction)]`
 - `dq limit [count]`
+- `dq to [data type]`
 
 ## features/commands that will exist, but I have not made final decisions on yet
 - aggregations
