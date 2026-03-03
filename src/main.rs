@@ -1,5 +1,8 @@
-use anyhow::{Context, Result};
-use clap::{Parser, Subcommand, ValueEnum};
+mod data_type;
+
+use anyhow::{Context, Ok, Result};
+use clap::{Parser, Subcommand};
+use data_type::DataType;
 use duckdb::Connection;
 
 #[derive(Parser)]
@@ -20,12 +23,6 @@ enum Command {
     },
 }
 
-#[derive(Clone, Copy, ValueEnum)]
-enum DataType {
-    Json,
-    Jsonl,
-}
-
 fn main() {
     if let Err(error) = run() {
         eprintln!("{error:#}");
@@ -35,60 +32,19 @@ fn main() {
 
 fn run() -> Result<()> {
     let cli = Cli::parse();
-    let connection = Connection::open_in_memory().context("failed to open duckdb")?;
-
-    load_arrow_extension(&connection)?;
+    let connection = open_connection()?;
 
     match cli.command {
-        Command::From {
-            data_type: DataType::Json,
-        } => from_json(&connection),
-        Command::From {
-            data_type: DataType::Jsonl,
-        } => from_jsonl(&connection),
-        Command::To {
-            data_type: DataType::Json,
-        } => to_json(&connection),
-        Command::To {
-            data_type: DataType::Jsonl,
-        } => to_jsonl(&connection),
+        Command::From { data_type } => data_type.from_stdin(&connection),
+        Command::To { data_type } => data_type.to_stdout(&connection),
     }
 }
 
-fn load_arrow_extension(connection: &Connection) -> Result<()> {
+fn open_connection() -> Result<Connection> {
+    let connection = Connection::open_in_memory().context("failed to open duckdb")?;
     connection
         .execute_batch("INSTALL arrow FROM community; LOAD arrow;")
-        .context("failed to install and load duckdb arrow extension")
-}
+        .context("failed to install and load duckdb arrow extension")?;
 
-fn from_jsonl(connection: &Connection) -> Result<()> {
-    connection
-        .execute_batch(
-            "COPY (SELECT * FROM read_json_auto('/dev/stdin', format='newline_delimited')) TO '/dev/stdout' (FORMAT ARROW);",
-        )
-        .context("failed to convert jsonl stdin to arrow stdout")
-}
-
-fn from_json(connection: &Connection) -> Result<()> {
-    connection
-        .execute_batch(
-            "COPY (SELECT * FROM read_json_auto('/dev/stdin')) TO '/dev/stdout' (FORMAT ARROW);",
-        )
-        .context("failed to convert json stdin to arrow stdout")
-}
-
-fn to_jsonl(connection: &Connection) -> Result<()> {
-    connection
-        .execute_batch(
-            "CREATE TEMP TABLE dq_input AS SELECT * FROM read_arrow('/dev/stdin'); COPY dq_input TO '/dev/stdout' (FORMAT JSON, ARRAY false);",
-        )
-        .context("failed to convert arrow stdin to jsonl stdout")
-}
-
-fn to_json(connection: &Connection) -> Result<()> {
-    connection
-        .execute_batch(
-            "CREATE TEMP TABLE dq_input AS SELECT * FROM read_arrow('/dev/stdin'); COPY dq_input TO '/dev/stdout' (FORMAT JSON, ARRAY true);",
-        )
-        .context("failed to convert arrow stdin to json stdout")
+    Ok(connection)
 }
