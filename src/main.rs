@@ -22,6 +22,7 @@ enum Command {
 
 #[derive(Clone, Copy, ValueEnum)]
 enum DataType {
+    Json,
     Jsonl,
 }
 
@@ -40,8 +41,14 @@ fn run() -> Result<()> {
 
     match cli.command {
         Command::From {
+            data_type: DataType::Json,
+        } => from_json(&connection),
+        Command::From {
             data_type: DataType::Jsonl,
         } => from_jsonl(&connection),
+        Command::To {
+            data_type: DataType::Json,
+        } => to_json(&connection),
         Command::To {
             data_type: DataType::Jsonl,
         } => to_jsonl(&connection),
@@ -62,10 +69,26 @@ fn from_jsonl(connection: &Connection) -> Result<()> {
         .context("failed to convert jsonl stdin to arrow stdout")
 }
 
+fn from_json(connection: &Connection) -> Result<()> {
+    connection
+        .execute_batch(
+            "COPY (SELECT * FROM read_json_auto('/dev/stdin')) TO '/dev/stdout' (FORMAT ARROW);",
+        )
+        .context("failed to convert json stdin to arrow stdout")
+}
+
 fn to_jsonl(connection: &Connection) -> Result<()> {
     connection
         .execute_batch(
             "CREATE TEMP TABLE dq_input AS SELECT * FROM read_arrow('/dev/stdin'); COPY dq_input TO '/dev/stdout' (FORMAT JSON, ARRAY false);",
         )
         .context("failed to convert arrow stdin to jsonl stdout")
+}
+
+fn to_json(connection: &Connection) -> Result<()> {
+    connection
+        .execute_batch(
+            "CREATE TEMP TABLE dq_input AS SELECT * FROM read_arrow('/dev/stdin'); COPY dq_input TO '/dev/stdout' (FORMAT JSON, ARRAY true);",
+        )
+        .context("failed to convert arrow stdin to json stdout")
 }
