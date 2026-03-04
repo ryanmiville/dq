@@ -7,7 +7,6 @@ edition = "2024"
 proc-macro = true
 
 [dependencies]
+dq_test_fixtures = { path = "../dq_test_fixtures" }
 quote = "1.0.40"
-serde = { version = "1.0.228", features = ["derive"] }
 syn = { version = "2.0.106", features = ["full"] }
-toml = "0.9.8"

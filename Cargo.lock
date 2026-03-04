@@ -549,8 +549,15 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "dq_test_fixtures",
  "dq_test_macros",
  "duckdb",
+]
+
+[[package]]
+name = "dq_test_fixtures"
+version = "0.1.0"
+dependencies = [
  "serde",
  "toml",
 ]
@@ -559,10 +566,9 @@ dependencies = [
 name = "dq_test_macros"
 version = "0.1.0"
 dependencies = [
+ "dq_test_fixtures",
  "quote",
- "serde",
  "syn 2.0.117",
- "toml",
 ]
 
 [[package]]

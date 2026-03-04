@@ -1,21 +1,7 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use serde::Deserialize;
-use std::fs;
 use std::path::{Path, PathBuf};
 use syn::{parse_macro_input, LitStr};
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Suite {
-    cmd: String,
-    cases: Vec<Case>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Case {
-    name: String,
-}
 
 #[proc_macro]
 pub fn fixture_tests(input: TokenStream) -> TokenStream {
@@ -27,39 +13,10 @@ pub fn fixture_tests(input: TokenStream) -> TokenStream {
         Err(err) => return compile_error(err),
     };
 
-    let fixture_content = match fs::read_to_string(&fixture_abs_path) {
-        Ok(content) => content,
-        Err(err) => {
-            return compile_error(format!(
-                "fixture_tests!: failed reading `{}`: {err}",
-                fixture_abs_path.display()
-            ));
-        }
-    };
-
-    let suite: Suite = match toml::from_str(&fixture_content) {
+    let suite = match dq_test_fixtures::load_suite_from_path(&fixture_abs_path) {
         Ok(suite) => suite,
-        Err(err) => {
-            return compile_error(format!(
-                "fixture_tests!: failed parsing `{}`: {err}",
-                fixture_abs_path.display()
-            ));
-        }
+        Err(err) => return compile_error(format!("fixture_tests!: {err}")),
     };
-
-    if suite.cases.is_empty() {
-        return compile_error(format!(
-            "fixture_tests!: `{}` has no [[cases]]",
-            fixture_abs_path.display()
-        ));
-    }
-
-    if suite.cmd.trim().is_empty() {
-        return compile_error(format!(
-            "fixture_tests!: `{}` has empty `cmd`",
-            fixture_abs_path.display()
-        ));
-    }
 
     let fixture_stem = fixture_stem(&fixture_rel_path);
     let fixture_rel_lit = LitStr::new(&fixture_rel_path, fixture_lit.span());
@@ -68,13 +25,6 @@ pub fn fixture_tests(input: TokenStream) -> TokenStream {
 
     for case in suite.cases {
         let case_name = case.name;
-        if case_name.trim().is_empty() {
-            return compile_error(format!(
-                "fixture_tests!: `{}` has empty case name",
-                fixture_abs_path.display()
-            ));
-        }
-
         let fn_name_raw = format!("{}_{}", fixture_stem, case_name);
         let fn_name_sanitized = sanitize_ident(&fn_name_raw);
         if !used.insert(fn_name_sanitized.clone()) {
