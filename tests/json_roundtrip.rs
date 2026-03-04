@@ -1,6 +1,3 @@
-mod common;
+use dq_test_macros::fixture_tests;
 
-#[test]
-fn json_roundtrip() {
-    common::run_suite_fixture("tests/test_cases/json_roundtrip.toml");
-}
+fixture_tests!("tests/test_cases/json_roundtrip.toml");

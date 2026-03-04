@@ -549,8 +549,19 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "dq_test_macros",
  "duckdb",
  "serde",
+ "toml",
+]
+
+[[package]]
+name = "dq_test_macros"
+version = "0.1.0"
+dependencies = [
+ "quote",
+ "serde",
+ "syn 2.0.117",
  "toml",
 ]
 

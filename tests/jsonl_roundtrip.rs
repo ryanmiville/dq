@@ -1,7 +1,3 @@
-#[macro_use]
-mod common;
+use dq_test_macros::fixture_tests;
 
-#[test]
-fn jsonl_roundtrip() {
-    common::run_suite_fixture("tests/test_cases/jsonl_roundtrip.toml");
-}
+fixture_tests!("tests/test_cases/jsonl_roundtrip.toml");

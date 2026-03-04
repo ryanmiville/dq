@@ -13,5 +13,6 @@ clap = { version = "4.5.60", features = ["derive"] }
 duckdb = { version = "1.4.4", features = ["bundled"] }
 
 [dev-dependencies]
+dq_test_macros = { path = "dq_test_macros" }
 serde = { version = "1.0.228", features = ["derive"] }
 toml = "0.9.8"

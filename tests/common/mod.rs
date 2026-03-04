@@ -73,6 +73,34 @@ pub fn run_suite_fixture(fixture_rel_path: &str) {
 }
 
 #[allow(dead_code)]
+pub fn run_suite_fixture_case(fixture_rel_path: &str, case_name: &str) {
+    let fixture_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(fixture_rel_path);
+    let suite = load_suite_from_path(&fixture_path);
+    let command = suite.cmd.replace("{dq}", dq());
+
+    let case = suite
+        .cases
+        .iter()
+        .find(|case| case.name == case_name)
+        .unwrap_or_else(|| {
+            let names = suite
+                .cases
+                .iter()
+                .map(|case| case.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            panic!(
+                "fixture `{}` missing case `{}`. available: [{}]",
+                fixture_path.display(),
+                case_name,
+                names
+            )
+        });
+
+    run_suite_case(&command, &fixture_path, case);
+}
+
+#[allow(dead_code)]
 fn run_suite_case(command: &str, fixture_path: &Path, case: &Case) {
     let output = run(command.to_string())
         .stdin(case.input.as_bytes())
