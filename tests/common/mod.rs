@@ -103,7 +103,7 @@ macro_rules! __table_tests_apply_fields {
         $($rest:tt)*
     ) => {
         {
-            let __v: &[u8] = $value;
+            let __v: &str = $value;
             $input = Some(__v);
         }
         __table_tests_apply_fields!(
@@ -222,7 +222,7 @@ macro_rules! table_tests {
             $($setup)*
 
             let mut __tt_cmd: Option<String> = None;
-            let mut __tt_input: Option<&[u8]> = None;
+            let mut __tt_input: Option<&str> = None;
             let mut __tt_success: Option<bool> = None;
             let mut __tt_stdout_mode: u8 = 0; // 0=unset, 1=same, 2=exact
             let mut __tt_stdout_exact: Option<&str> = None;
@@ -246,7 +246,7 @@ macro_rules! table_tests {
             if __tt_success {
                 assert!(
                     __tt_stdout_mode != 0,
-                    "table_tests!: `stdout` is required when success=true (use `stdout: same` or exact bytes)"
+                    "table_tests!: `stdout` is required when success=true (use `stdout: same` or exact text)"
                 );
             }
 
@@ -268,9 +268,7 @@ macro_rules! table_tests {
                     1 => {
                         let __tt_stdout_text = std::str::from_utf8(&__tt_output.stdout)
                             .expect("table_tests!: stdout not valid UTF-8");
-                        let __tt_input_text =
-                            std::str::from_utf8(__tt_input).expect("table_tests!: input not valid UTF-8");
-                        $crate::common::assert_normalized_text_eq(__tt_stdout_text, __tt_input_text);
+                        $crate::common::assert_normalized_text_eq(__tt_stdout_text, __tt_input);
                     }
                     2 => $crate::common::assert_normalized_text_eq(
                         std::str::from_utf8(&__tt_output.stdout)

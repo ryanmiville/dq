@@ -13,14 +13,14 @@ table_tests! {
     }
 
     single_row {
-        input: br#"[
+        input: r#"[
         {"name":"Ada","age":37}
 ]
 "#,
     }
 
     two_rows {
-        input: br#"[
+        input: r#"[
     {"name":"Ada","age":37},
     {"name":"Linus","age":54}
 ]
@@ -28,14 +28,14 @@ table_tests! {
     }
 
     complex_types {
-        input: br#"[
+        input: r#"[
     {"a":1,"b":[1,2],"c":{"x":true},"d":null,"e":"hi"}
 ]
 "#,
     }
 
     multiple_scalar {
-        input: br#"[
+        input: r#"[
     {"id":1,"score":1.25,"active":false},
     {"id":2,"score":0.0,"active":true}
 ]
@@ -43,14 +43,14 @@ table_tests! {
     }
 
     empty {
-        input: b"",
+        input: "",
         stdout: "[
 
 ]",
     }
 
     invalid_input {
-        input: br#"not-json
+        input: r#"not-json
 "#,
         success: false,
         stderr_contains: "Malformed JSON",
