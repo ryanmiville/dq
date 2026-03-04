@@ -1,11 +1,13 @@
 mod data_type;
 mod select;
+mod where_clause;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use data_type::DataType;
 use duckdb::Connection;
 use select::select;
+use where_clause::where_clause;
 
 #[derive(Parser)]
 struct Cli {
@@ -26,6 +28,9 @@ enum Command {
     Select {
         columns: String,
     },
+    Where {
+        clause: String,
+    },
 }
 
 fn main() {
@@ -42,7 +47,8 @@ fn run() -> Result<()> {
     match cli.command {
         Command::From { data_type } => data_type.from_stdin(&connection),
         Command::To { data_type } => data_type.to_stdout(&connection),
-        Command::Select { columns } => select(&connection, columns),
+        Command::Select { columns } => select(&connection, &columns),
+        Command::Where { clause } => where_clause(&connection, &clause),
     }
 }
 
