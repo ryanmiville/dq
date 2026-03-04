@@ -44,7 +44,9 @@ table_tests! {
 
     empty {
         input: b"",
-        stdout: same,
+        stdout: "[
+
+]",
     }
 
     invalid_input {

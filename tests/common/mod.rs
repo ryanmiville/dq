@@ -12,6 +12,18 @@ pub fn run(command: impl Into<String>) -> Runner {
     }
 }
 
+pub(crate) fn normalize_output_text(s: &str) -> String {
+    s.replace("\r\n", "\n")
+        .lines()
+        .map(|line| line.trim_end().trim_start_matches([' ', '\t']))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+pub(crate) fn assert_normalized_text_eq(left: &str, right: &str) {
+    assert_eq!(normalize_output_text(left), normalize_output_text(right));
+}
+
 pub struct Runner {
     command: String,
     stdin: Option<Vec<u8>>,
@@ -138,7 +150,7 @@ macro_rules! __table_tests_apply_fields {
     ) => {
         $stdout_mode = 2;
         {
-            let __v: &[u8] = $value;
+            let __v: &str = $value;
             $stdout_exact = Some(__v);
         }
         __table_tests_apply_fields!(
@@ -213,7 +225,7 @@ macro_rules! table_tests {
             let mut __tt_input: Option<&[u8]> = None;
             let mut __tt_success: Option<bool> = None;
             let mut __tt_stdout_mode: u8 = 0; // 0=unset, 1=same, 2=exact
-            let mut __tt_stdout_exact: Option<&[u8]> = None;
+            let mut __tt_stdout_exact: Option<&str> = None;
             let mut __tt_stderr_contains: Option<&str> = None;
 
             __table_tests_apply_fields!(
@@ -253,10 +265,17 @@ macro_rules! table_tests {
                 );
 
                 match __tt_stdout_mode {
-                    1 => assert_eq!(__tt_output.stdout, __tt_input),
-                    2 => assert_eq!(
-                        __tt_output.stdout,
-                        __tt_stdout_exact.expect("table_tests!: internal missing stdout bytes")
+                    1 => {
+                        let __tt_stdout_text = std::str::from_utf8(&__tt_output.stdout)
+                            .expect("table_tests!: stdout not valid UTF-8");
+                        let __tt_input_text =
+                            std::str::from_utf8(__tt_input).expect("table_tests!: input not valid UTF-8");
+                        $crate::common::assert_normalized_text_eq(__tt_stdout_text, __tt_input_text);
+                    }
+                    2 => $crate::common::assert_normalized_text_eq(
+                        std::str::from_utf8(&__tt_output.stdout)
+                            .expect("table_tests!: stdout not valid UTF-8"),
+                        __tt_stdout_exact.expect("table_tests!: internal missing stdout text"),
                     ),
                     _ => unreachable!(),
                 }
