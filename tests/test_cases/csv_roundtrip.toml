@@ -1,0 +1,39 @@
+cmd = "{dq} from csv | {dq} to csv"
+
+[[cases]]
+name = "single_row"
+input = """
+name,age
+Ada,37
+"""
+[cases.expect]
+kind = "same"
+
+[[cases]]
+name = "two_rows"
+input = """
+name,age
+Ada,37
+Linus,54
+"""
+[cases.expect]
+kind = "same"
+
+[[cases]]
+name = "multiple_scalar"
+input = """
+id,active
+1,false
+2,true
+"""
+[cases.expect]
+kind = "same"
+
+[[cases]]
+name = "empty"
+input = ""
+[cases.expect]
+kind = "exact"
+stdout = """
+column0
+"""
