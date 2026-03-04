@@ -1,4 +1,8 @@
+use serde::Deserialize;
+use std::collections::HashSet;
+use std::fs;
 use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
 pub fn dq() -> &'static str {
@@ -22,6 +26,168 @@ pub(crate) fn normalize_output_text(s: &str) -> String {
 
 pub(crate) fn assert_normalized_text_eq(left: &str, right: &str) {
     assert_eq!(normalize_output_text(left), normalize_output_text(right));
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Suite {
+    cmd: String,
+    cases: Vec<Case>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Case {
+    name: String,
+    input: String,
+    #[serde(default = "default_success")]
+    success: bool,
+    expect: Expect,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+enum Expect {
+    Same,
+    Exact { stdout: String },
+    StderrContains { text: String },
+}
+
+const fn default_success() -> bool {
+    true
+}
+
+#[allow(dead_code)]
+pub fn run_suite_fixture(fixture_rel_path: &str) {
+    let fixture_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(fixture_rel_path);
+    let suite = load_suite_from_path(&fixture_path);
+    let command = suite.cmd.replace("{dq}", dq());
+
+    for case in &suite.cases {
+        run_suite_case(&command, &fixture_path, &case);
+    }
+}
+
+#[allow(dead_code)]
+fn run_suite_case(command: &str, fixture_path: &Path, case: &Case) {
+    let output = run(command.to_string())
+        .stdin(case.input.as_bytes())
+        .output()
+        .unwrap_or_else(|err| {
+            panic!(
+                "fixture `{}` case `{}`: failed to run command: {err}",
+                fixture_path.display(),
+                case.name
+            )
+        });
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    if case.success {
+        assert!(
+            output.status.success(),
+            "fixture `{}` case `{}`: expected success, got failure. stderr:\n{}",
+            fixture_path.display(),
+            case.name,
+            stderr
+        );
+    } else {
+        assert!(
+            !output.status.success(),
+            "fixture `{}` case `{}`: expected failure, got success",
+            fixture_path.display(),
+            case.name
+        );
+    }
+
+    match &case.expect {
+        Expect::Same => {
+            let stdout = std::str::from_utf8(&output.stdout).unwrap_or_else(|err| {
+                panic!(
+                    "fixture `{}` case `{}`: stdout not valid UTF-8: {err}",
+                    fixture_path.display(),
+                    case.name
+                )
+            });
+            assert_normalized_text_eq(stdout, &case.input);
+        }
+        Expect::Exact {
+            stdout: expected_stdout,
+        } => {
+            let stdout = std::str::from_utf8(&output.stdout).unwrap_or_else(|err| {
+                panic!(
+                    "fixture `{}` case `{}`: stdout not valid UTF-8: {err}",
+                    fixture_path.display(),
+                    case.name
+                )
+            });
+            assert_normalized_text_eq(stdout, expected_stdout);
+        }
+        Expect::StderrContains { text } => {
+            assert!(
+                stderr.contains(text),
+                "fixture `{}` case `{}`: stderr missing `{}`. stderr:\n{}",
+                fixture_path.display(),
+                case.name,
+                text,
+                stderr
+            );
+        }
+    }
+}
+
+#[allow(dead_code)]
+fn load_suite_from_path(path: &Path) -> Suite {
+    let content = fs::read_to_string(path)
+        .unwrap_or_else(|err| panic!("fixture `{}` read error: {err}", path.display()));
+
+    parse_and_validate_suite(&content, &path.display().to_string())
+        .unwrap_or_else(|err| panic!("{err}"))
+}
+
+fn parse_and_validate_suite(content: &str, fixture_label: &str) -> Result<Suite, String> {
+    let suite: Suite = toml::from_str(content)
+        .map_err(|err| format!("fixture `{fixture_label}` parse error: {err}"))?;
+    validate_suite(&suite, fixture_label)?;
+    Ok(suite)
+}
+
+fn validate_suite(suite: &Suite, fixture_label: &str) -> Result<(), String> {
+    if suite.cases.is_empty() {
+        return Err(format!(
+            "fixture `{fixture_label}` invalid: must declare at least one case"
+        ));
+    }
+
+    let mut seen_names = HashSet::new();
+
+    for case in &suite.cases {
+        if case.name.trim().is_empty() {
+            return Err(format!(
+                "fixture `{fixture_label}` invalid: case name must be non-empty"
+            ));
+        }
+
+        if !seen_names.insert(case.name.clone()) {
+            return Err(format!(
+                "fixture `{fixture_label}` invalid: duplicate case name `{}`",
+                case.name
+            ));
+        }
+
+        if !case.success && matches!(case.expect, Expect::Same) {
+            return Err(format!(
+                "fixture `{fixture_label}` case `{}` invalid: success=false cannot use expect.kind=same",
+                case.name
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 pub struct Runner {
@@ -185,6 +351,52 @@ macro_rules! __table_tests_apply_fields {
     ) => {
         compile_error!(concat!("table_tests!: unknown field `", stringify!($bad), "`"));
     };
+}
+
+#[cfg(all(test, feature = "common-tests"))]
+mod tests {
+    use super::parse_and_validate_suite;
+
+    #[test]
+    fn rejects_empty_cases() {
+        let err = parse_and_validate_suite("cmd = \"x\"\ncases = []\n", "fixture.toml")
+            .expect_err("expected empty cases validation error");
+
+        assert!(err.contains("must declare at least one case"));
+    }
+
+    #[test]
+    fn rejects_duplicate_case_names() {
+        let err = parse_and_validate_suite(
+            "cmd = \"x\"\n\n[[cases]]\nname = \"dup\"\ninput = \"a\"\n[cases.expect]\nkind = \"same\"\n\n[[cases]]\nname = \"dup\"\ninput = \"b\"\n[cases.expect]\nkind = \"same\"\n",
+            "fixture.toml",
+        )
+        .expect_err("expected duplicate case validation error");
+
+        assert!(err.contains("duplicate case name `dup`"));
+    }
+
+    #[test]
+    fn rejects_failure_with_same_expectation() {
+        let err = parse_and_validate_suite(
+            "cmd = \"x\"\n\n[[cases]]\nname = \"bad\"\ninput = \"a\"\nsuccess = false\n[cases.expect]\nkind = \"same\"\n",
+            "fixture.toml",
+        )
+        .expect_err("expected failure+same validation error");
+
+        assert!(err.contains("success=false cannot use expect.kind=same"));
+    }
+
+    #[test]
+    fn rejects_unknown_fields() {
+        let err = parse_and_validate_suite(
+            "cmd = \"x\"\n\n[[cases]]\nname = \"bad\"\ninput = \"a\"\nunknown = true\n[cases.expect]\nkind = \"same\"\n",
+            "fixture.toml",
+        )
+        .expect_err("expected unknown field parse error");
+
+        assert!(err.contains("unknown field `unknown`"));
+    }
 }
 
 #[macro_export]
