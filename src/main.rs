@@ -1,9 +1,11 @@
 mod data_type;
+mod select;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use data_type::DataType;
 use duckdb::Connection;
+use select::select;
 
 #[derive(Parser)]
 struct Cli {
@@ -21,6 +23,9 @@ enum Command {
         #[arg(value_enum)]
         data_type: DataType,
     },
+    Select {
+        columns: String,
+    },
 }
 
 fn main() {
@@ -37,6 +42,7 @@ fn run() -> Result<()> {
     match cli.command {
         Command::From { data_type } => data_type.from_stdin(&connection),
         Command::To { data_type } => data_type.to_stdout(&connection),
+        Command::Select { columns } => select(&connection, columns),
     }
 }
 

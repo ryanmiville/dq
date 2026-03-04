@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "dq_test_macros", "dq_test_fixtures"]
+resolver = "3"
+
 [package]
 name = "dq"
 version = "0.1.0"

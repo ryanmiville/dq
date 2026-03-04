@@ -1,0 +1,33 @@
+cmd = "{dq} from jsonl | {dq} select \"name\" | {dq} to jsonl"
+
+[[cases]]
+name = "single_row"
+input = """
+{"name":"Ada","age":37}
+"""
+[cases.expect]
+kind = "exact"
+stdout = """
+{"name":"Ada"}
+"""
+
+[[cases]]
+name = "two_rows"
+input = """
+{"name":"Ada","age":37}
+{"name":"Linus","age":54}
+"""
+[cases.expect]
+kind = "exact"
+stdout = """
+{"name":"Ada"}
+{"name":"Linus"}
+"""
+
+[[cases]]
+name = "empty"
+input = ""
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "IO Error"
