@@ -4,7 +4,7 @@ mod where_clause;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use data_type::DataType;
+use data_type::{DataType, ToTarget};
 use duckdb::Connection;
 use select::select;
 use where_clause::where_clause;
@@ -22,8 +22,7 @@ enum Command {
         data_type: DataType,
     },
     To {
-        #[arg(value_enum)]
-        data_type: DataType,
+        target: String,
     },
     Select {
         columns: String,
@@ -46,7 +45,7 @@ fn run() -> Result<()> {
 
     match cli.command {
         Command::From { data_type } => data_type.from_stdin(&connection),
-        Command::To { data_type } => data_type.to_stdout(&connection),
+        Command::To { target } => ToTarget::parse(target).to_stdout(&connection),
         Command::Select { columns } => select(&connection, &columns),
         Command::Where { clause } => where_clause(&connection, &clause),
     }
