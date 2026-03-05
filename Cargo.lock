@@ -567,6 +567,7 @@ name = "dq_test_macros"
 version = "0.1.0"
 dependencies = [
  "dq_test_fixtures",
+ "proc-macro2",
  "quote",
  "syn 2.0.117",
 ]

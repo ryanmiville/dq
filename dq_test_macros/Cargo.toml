@@ -8,5 +8,6 @@ proc-macro = true
 
 [dependencies]
 dq_test_fixtures = { path = "../dq_test_fixtures" }
+proc-macro2 = "1.0.94"
 quote = "1.0.40"
 syn = { version = "2.0.106", features = ["full"] }

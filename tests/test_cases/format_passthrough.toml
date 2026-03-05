@@ -1,0 +1,16 @@
+cmd = "{dq} from \"read_csv('/dev/stdin')\" | {dq} to \"(FORMAT CSV, DELIMITER '|', HEADER)\""
+
+[[cases]]
+name = "raw_roundtrip"
+input = """
+name,age
+Ada,37
+Linus,54
+"""
+[cases.expect]
+kind = "exact"
+stdout = """
+name|age
+Ada|37
+Linus|54
+"""
