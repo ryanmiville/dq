@@ -1,13 +1,10 @@
-mod data_type;
-mod select;
-mod where_clause;
+mod cmd;
+mod format;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use data_type::{DataType, ToTarget};
 use duckdb::Connection;
-use select::select;
-use where_clause::where_clause;
+use format::Format;
 
 #[derive(Parser)]
 struct Cli {
@@ -17,19 +14,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    From {
-        #[arg(value_enum)]
-        data_type: DataType,
-    },
-    To {
-        target: String,
-    },
-    Select {
-        columns: String,
-    },
-    Where {
-        clause: String,
-    },
+    From { format: String },
+    To { format: String },
+    Select { columns: String },
+    Where { clause: String },
 }
 
 fn main() {
@@ -41,21 +29,19 @@ fn main() {
 
 fn run() -> Result<()> {
     let cli = Cli::parse();
-    let connection = open_connection()?;
+    let conn = open_connection()?;
 
     match cli.command {
-        Command::From { data_type } => data_type.from_stdin(&connection),
-        Command::To { target } => ToTarget::parse(target).to_stdout(&connection),
-        Command::Select { columns } => select(&connection, &columns),
-        Command::Where { clause } => where_clause(&connection, &clause),
+        Command::From { format } => cmd::from(&conn, &Format::parse(format)),
+        Command::To { format } => cmd::to(&conn, &Format::parse(format)),
+        Command::Select { columns } => cmd::select(&conn, &columns),
+        Command::Where { clause } => cmd::where_clause(&conn, &clause),
     }
 }
 
 fn open_connection() -> Result<Connection> {
-    let connection = Connection::open_in_memory().context("failed to open duckdb")?;
-    connection
-        .execute_batch("INSTALL arrow FROM community; LOAD arrow;")
+    let conn = Connection::open_in_memory().context("failed to open duckdb")?;
+    conn.execute_batch("INSTALL arrow FROM community; LOAD arrow;")
         .context("failed to install and load duckdb arrow extension")?;
-
-    Ok(connection)
+    Ok(conn)
 }
