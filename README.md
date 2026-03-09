@@ -33,11 +33,18 @@ Built with:
 
 ### Preset formats
 
-`from`/`to` support these presets:
+`from` supports these presets:
 
 - `csv`
 - `json`
 - `jsonl`
+
+`to` supports these presets:
+
+- `csv`
+- `json`
+- `jsonl`
+- `pretty`
 
 You can also pass raw DuckDB expressions/options for advanced use.
 
@@ -101,6 +108,14 @@ printf 'name,age\nAda,37\nLinus,54\n' |
 printf '[{"name":"Ada","age":37}]\n' |
   dq from json |
   dq to json
+```
+
+### Pretty table output
+
+```bash
+printf '[{"name":"Ada","age":37},{"name":"Linus","age":54}]\n' |
+  dq from json |
+  dq to pretty
 ```
 
 ## Development

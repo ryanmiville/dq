@@ -5,6 +5,7 @@ pub enum Preset {
     Csv,
     Json,
     Jsonl,
+    Pretty,
 }
 
 pub enum Format {
@@ -27,6 +28,9 @@ impl Format {
                 "read_json_auto('/dev/stdin', format='newline_delimited')"
             }
             Format::Preset(Preset::Csv) => "read_csv('/dev/stdin')",
+            Format::Preset(Preset::Pretty) => {
+                unreachable!("pretty is only supported as an output format")
+            }
             Format::Passthrough(text) => text,
         }
     }
@@ -36,6 +40,9 @@ impl Format {
             Format::Preset(Preset::Json) => "(FORMAT JSON, ARRAY true)",
             Format::Preset(Preset::Jsonl) => "(FORMAT JSON, ARRAY false)",
             Format::Preset(Preset::Csv) => "(FORMAT csv, DELIMITER ',', HEADER)",
+            Format::Preset(Preset::Pretty) => {
+                unreachable!("pretty is only supported as an output format")
+            }
             Format::Passthrough(text) => text,
         }
     }

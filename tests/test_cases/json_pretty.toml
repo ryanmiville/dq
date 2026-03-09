@@ -1,0 +1,66 @@
+cmd = "{dq} from json | {dq} to pretty"
+
+[[cases]]
+name = "single_row"
+input = """
+[
+        {"name":"Ada","age":37}
+]
+"""
+[cases.expect]
+kind = "exact"
+stdout = """
++------+-----+
+| name | age |
++------+-----+
+| Ada  | 37  |
++------+-----+
+"""
+
+[[cases]]
+name = "two_rows"
+input = """
+[
+    {"name":"Ada","age":37},
+    {"name":"Linus","age":54}
+]
+"""
+[cases.expect]
+kind = "exact"
+stdout = """
++-------+-----+
+| name  | age |
++-------+-----+
+| Ada   | 37  |
+| Linus | 54  |
++-------+-----+
+"""
+
+[[cases]]
+name = "multiple_scalar"
+input = """
+[
+    {"id":1,"score":1.25,"active":false},
+    {"id":2,"score":0.0,"active":true}
+]
+"""
+[cases.expect]
+kind = "exact"
+stdout = """
++----+-------+--------+
+| id | score | active |
++----+-------+--------+
+| 1  | 1.25  | false  |
+| 2  | 0.0   | true   |
++----+-------+--------+
+"""
+
+[[cases]]
+name = "invalid_input"
+input = """
+not-json
+"""
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "Malformed JSON"

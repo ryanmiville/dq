@@ -4,7 +4,7 @@ use quote::quote;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use syn::{parse_macro_input, LitStr};
+use syn::{LitStr, parse_macro_input};
 
 #[proc_macro]
 pub fn fixture_tests(input: TokenStream) -> TokenStream {
