@@ -118,6 +118,16 @@ printf '[{"name":"Ada","age":37},{"name":"Linus","age":54}]\n' |
   dq to pretty
 ```
 
+### Terminal auto-display
+
+When `dq from`, `dq select`, or `dq where` write directly to a terminal, they display a pretty table automatically. When their output is piped, they continue emitting Arrow for the next `dq` stage.
+
+```bash
+printf '{"name":"Ada","age":37}\n{"name":"Linus","age":54}\n' |
+  dq from jsonl |
+  dq where "age >= 40"
+```
+
 ## Development
 
 Run tests:
