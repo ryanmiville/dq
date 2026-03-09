@@ -11,7 +11,7 @@ pub fn to(conn: &Connection, format: &Format) -> Result<()> {
     }
 
     let sql = format!(
-        "CREATE TEMP TABLE dq_input AS SELECT * FROM read_arrow('/dev/stdin'); COPY dq_input TO '/dev/stdout' {};",
+        "CREATE TEMP TABLE dq_input AS SELECT * FROM read_arrow('/dev/stdin'); COPY dq_input TO {};",
         format.copy_format()
     );
     conn.execute_batch(&sql)

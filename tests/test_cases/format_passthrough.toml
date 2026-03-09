@@ -1,4 +1,4 @@
-cmd = "{dq} from \"read_csv('/dev/stdin')\" | {dq} to \"(FORMAT CSV, DELIMITER '|', HEADER)\""
+cmd = "{dq} from \"read_csv('/dev/stdin')\" | {dq} to \"'/dev/stdout' (FORMAT CSV, DELIMITER '|', HEADER)\""
 
 [[cases]]
 name = "raw_roundtrip"

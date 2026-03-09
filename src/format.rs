@@ -37,9 +37,9 @@ impl Format {
 
     pub fn copy_format(&self) -> &str {
         match self {
-            Format::Preset(Preset::Json) => "(FORMAT JSON, ARRAY true)",
-            Format::Preset(Preset::Jsonl) => "(FORMAT JSON, ARRAY false)",
-            Format::Preset(Preset::Csv) => "(FORMAT csv, DELIMITER ',', HEADER)",
+            Format::Preset(Preset::Json) => "'/dev/stdout' (FORMAT JSON, ARRAY true)",
+            Format::Preset(Preset::Jsonl) => "'/dev/stdout' (FORMAT JSON, ARRAY false)",
+            Format::Preset(Preset::Csv) => "'/dev/stdout' (FORMAT csv, DELIMITER ',', HEADER)",
             Format::Preset(Preset::Pretty) => {
                 unreachable!("pretty is only supported as an output format")
             }
