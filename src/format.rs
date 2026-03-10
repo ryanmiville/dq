@@ -7,7 +7,6 @@ pub enum Preset {
     Csv,
     Json,
     Jsonl,
-    Pretty,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -43,9 +42,6 @@ impl Format {
             Format::Preset(Preset::Csv) => "read_csv('/dev/stdin')".to_string(),
             Format::Path(path) => sql_string_literal(path),
             Format::Passthrough(text) => text.clone(),
-            Format::Preset(Preset::Pretty) => {
-                unreachable!("pretty is only supported as an output format")
-            }
         }
     }
 
@@ -55,9 +51,6 @@ impl Format {
             Format::Preset(Preset::Jsonl) => "'/dev/stdout' (FORMAT JSON, ARRAY false)".to_string(),
             Format::Preset(Preset::Csv) => {
                 "'/dev/stdout' (FORMAT csv, DELIMITER ',', HEADER)".to_string()
-            }
-            Format::Preset(Preset::Pretty) => {
-                unreachable!("pretty is only supported as an output format")
             }
             Format::Path(path) => sql_string_literal(path),
             Format::Passthrough(text) => text.clone(),

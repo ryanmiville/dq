@@ -2,17 +2,12 @@ use std::io::{self, IsTerminal};
 
 use crate::{
     duckbox::{Config as DuckBoxConfig, DuckBox},
-    format::{Format, Preset},
+    format::Format,
 };
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use duckdb::Connection;
 
 pub fn to(conn: &Connection, format: &Format) -> Result<()> {
-    if is_pretty(format) {
-        print_pretty_query(conn, "SELECT * FROM read_arrow('/dev/stdin')")?;
-        return Ok(());
-    }
-
     let sql = format!(
         "CREATE TEMP TABLE dq_input AS SELECT * FROM read_arrow('/dev/stdin'); COPY dq_input TO {};",
         format.copy_format()
@@ -22,10 +17,6 @@ pub fn to(conn: &Connection, format: &Format) -> Result<()> {
 }
 
 pub fn from(conn: &Connection, format: &Format) -> Result<()> {
-    if is_pretty(format) {
-        bail!("pretty is only supported by `dq to pretty`");
-    }
-
     let query = format!("SELECT * FROM {}", format.read_fn());
     emit_relation_query(conn, &query).context("failed to read input")
 }
@@ -74,10 +65,6 @@ fn pretty_query(conn: &Connection, query: &str) -> Result<String> {
     DuckBox::new(DuckBoxConfig::default())
         .render(&batches)
         .context("failed to format pretty output")
-}
-
-fn is_pretty(format: &Format) -> bool {
-    matches!(format, Format::Preset(Preset::Pretty))
 }
 
 fn output_mode() -> OutputMode {
