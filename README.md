@@ -26,8 +26,8 @@ Built with:
 
 ## Current command set
 
-- `dq from <format-or-expression>`
-- `dq to <format-or-copy-options>`
+- `dq from <format-or-path>`
+- `dq to <format-or-path>`
 - `dq select <columns>`
 - `dq where <clause>`
 
@@ -46,16 +46,22 @@ Built with:
 - `jsonl`
 - `pretty`
 
-You can also pass raw DuckDB expressions/options for advanced use.
+`from` and `to` also accept file paths directly, so you can point at files without wrapping them in SQL quotes.
 
 Examples:
 
 ```bash
-# custom read expression
-dq from "read_csv('/dev/stdin')"
+# read a file directly
+dq from ../testdata.json
 
-# custom COPY options
-dq to "(FORMAT CSV, DELIMITER '|', HEADER)"
+# write a file directly
+dq to ../out/result.csv
+
+# raw DuckDB read expression
+dq from --expr "read_csv('/dev/stdin')"
+
+# raw DuckDB COPY options
+dq to --expr "(FORMAT CSV, DELIMITER '|', HEADER)"
 ```
 
 ## Install / run
@@ -116,6 +122,14 @@ printf '[{"name":"Ada","age":37}]\n' |
 printf '[{"name":"Ada","age":37},{"name":"Linus","age":54}]\n' |
   dq from json |
   dq to pretty
+```
+
+### File-to-file conversion
+
+```bash
+dq from ../data/input.json |
+  dq where "age >= 40" |
+  dq to ../data/filtered.jsonl
 ```
 
 ### Terminal auto-display

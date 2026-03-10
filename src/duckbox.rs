@@ -574,7 +574,9 @@ fn render_footer_lines(inner_width: usize, footer: &Footer, style: &RenderStyle)
     let left_plain = footer_plain_side(&footer.left_primary, footer.left_secondary.as_deref());
     let right_plain = footer_plain_side(&footer.right_primary, footer.right_secondary.as_deref());
 
-    if inner_width >= 2 && display_width(&left_plain) + display_width(&right_plain) <= inner_width - 2 {
+    if inner_width >= 2
+        && display_width(&left_plain) + display_width(&right_plain) <= inner_width - 2
+    {
         let left = render_footer_side(
             &footer.left_primary,
             footer.left_secondary.as_deref(),
@@ -952,11 +954,7 @@ mod tests {
                     width: 3,
                 },
             ],
-            Some(&[
-                "Sales".to_string(),
-                "10".to_string(),
-                "true".to_string(),
-            ]),
+            Some(&["Sales".to_string(), "10".to_string(), "true".to_string()]),
             &RenderStyle::new(false),
         );
 

@@ -20,22 +20,32 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Read data from stdin in the given format and output Arrow
+    /// Read data from stdin or a file and output Arrow
     ///
-    /// Presets: csv, json, jsonl. Any other value is passed directly
-    /// as a DuckDB table function expression (e.g. "read_parquet('/dev/stdin')").
+    /// Presets: csv, json, jsonl. Any other path is treated as a file source.
+    /// Use --expr for raw DuckDB read expressions.
     From {
-        /// Input format preset or DuckDB read expression
-        format: String,
+        /// Input format preset or input file path
+        #[arg(value_name = "FORMAT|PATH", required_unless_present = "expr")]
+        format: Option<String>,
+
+        /// Raw DuckDB read expression (escape hatch for advanced use)
+        #[arg(long, value_name = "READ_EXPR", conflicts_with = "format")]
+        expr: Option<String>,
     },
 
     /// Read Arrow from stdin and write to stdout in the given format
     ///
-    /// Presets: csv, json, jsonl, pretty. Any other value is passed directly
-    /// as a DuckDB COPY destination expression.
+    /// Presets: csv, json, jsonl, pretty. Any other path is treated as a file
+    /// destination. Use --expr for raw DuckDB COPY expressions.
     To {
-        /// Output format preset or DuckDB COPY expression
-        format: String,
+        /// Output format preset or output file path
+        #[arg(value_name = "FORMAT|PATH", required_unless_present = "expr")]
+        format: Option<String>,
+
+        /// Raw DuckDB COPY expression (escape hatch for advanced use)
+        #[arg(long, value_name = "COPY_EXPR", conflicts_with = "format")]
+        expr: Option<String>,
     },
 
     /// Project columns from Arrow input using a SQL SELECT expression
@@ -67,8 +77,8 @@ fn run() -> Result<()> {
     let conn = open_connection()?;
 
     match cli.command {
-        Command::From { format } => cmd::from(&conn, &Format::parse(format)),
-        Command::To { format } => cmd::to(&conn, &Format::parse(format)),
+        Command::From { format, expr } => cmd::from(&conn, &Format::parse(format, expr)),
+        Command::To { format, expr } => cmd::to(&conn, &Format::parse(format, expr)),
         Command::Select { columns } => cmd::select(&conn, &columns),
         Command::Where { clause } => cmd::where_clause(&conn, &clause),
     }
