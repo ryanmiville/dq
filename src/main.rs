@@ -1,4 +1,5 @@
 mod cmd;
+mod duckbox;
 mod format;
 
 use anyhow::{Context, Result};

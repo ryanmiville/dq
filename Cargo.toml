@@ -11,6 +11,8 @@ edition = "2024"
 anyhow = "1.0.100"
 clap = { version = "4.5.60", features = ["derive"] }
 duckdb = { version = "1.4.4", features = ["bundled"] }
+terminal_size = "0.4.3"
+unicode-width = "0.2.0"
 
 [dev-dependencies]
 dq_test_fixtures = { path = "dq_test_fixtures" }

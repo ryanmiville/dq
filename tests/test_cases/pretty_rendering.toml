@@ -1,0 +1,84 @@
+cmd = "{dq} from json | {dq} to pretty"
+
+[[cases]]
+name = "null_display"
+input = """
+[
+    {"name":"Ada","nickname":null,"active":true}
+]
+"""
+[cases.expect]
+kind = "exact"
+stdout = """
+┌─────────┬──────────┬─────────┐
+│  name   │ nickname │ active  │
+│ varchar │ varchar  │ boolean │
+├─────────┼──────────┼─────────┤
+│ Ada     │ NULL     │ true    │
+└─────────┴──────────┴─────────┘
+"""
+
+[[cases]]
+name = "row_truncation_footer"
+input = """
+[
+    {"name":"Employee_001","dept":"Ops","n":1},
+    {"name":"Employee_002","dept":"Ops","n":2},
+    {"name":"Employee_003","dept":"Ops","n":3},
+    {"name":"Employee_004","dept":"Ops","n":4},
+    {"name":"Employee_005","dept":"Ops","n":5},
+    {"name":"Employee_006","dept":"Ops","n":6},
+    {"name":"Employee_007","dept":"Ops","n":7},
+    {"name":"Employee_008","dept":"Ops","n":8},
+    {"name":"Employee_009","dept":"Ops","n":9},
+    {"name":"Employee_010","dept":"Ops","n":10},
+    {"name":"Employee_011","dept":"Ops","n":11},
+    {"name":"Employee_012","dept":"Ops","n":12},
+    {"name":"Employee_013","dept":"Ops","n":13},
+    {"name":"Employee_014","dept":"Ops","n":14},
+    {"name":"Employee_015","dept":"Ops","n":15},
+    {"name":"Employee_016","dept":"Ops","n":16},
+    {"name":"Employee_017","dept":"Ops","n":17},
+    {"name":"Employee_018","dept":"Ops","n":18},
+    {"name":"Employee_019","dept":"Ops","n":19},
+    {"name":"Employee_020","dept":"Ops","n":20},
+    {"name":"Employee_021","dept":"Ops","n":21},
+    {"name":"Employee_022","dept":"Ops","n":22},
+    {"name":"Employee_023","dept":"Ops","n":23},
+    {"name":"Employee_024","dept":"Ops","n":24}
+]
+"""
+[cases.expect]
+kind = "exact"
+stdout = """
+┌──────────────┬─────────┬────────┐
+│     name     │  dept   │   n    │
+│   varchar    │ varchar │ bigint │
+├──────────────┼─────────┼────────┤
+│ Employee_001 │ Ops     │      1 │
+│ Employee_002 │ Ops     │      2 │
+│ Employee_003 │ Ops     │      3 │
+│ Employee_004 │ Ops     │      4 │
+│ Employee_005 │ Ops     │      5 │
+│ Employee_006 │ Ops     │      6 │
+│ Employee_007 │ Ops     │      7 │
+│ Employee_008 │ Ops     │      8 │
+│ Employee_009 │ Ops     │      9 │
+│ Employee_010 │ Ops     │     10 │
+│      ·       │    ·    │   ·    │
+│      ·       │    ·    │   ·    │
+│      ·       │    ·    │   ·    │
+│ Employee_015 │ Ops     │     15 │
+│ Employee_016 │ Ops     │     16 │
+│ Employee_017 │ Ops     │     17 │
+│ Employee_018 │ Ops     │     18 │
+│ Employee_019 │ Ops     │     19 │
+│ Employee_020 │ Ops     │     20 │
+│ Employee_021 │ Ops     │     21 │
+│ Employee_022 │ Ops     │     22 │
+│ Employee_023 │ Ops     │     23 │
+│ Employee_024 │ Ops     │     24 │
+├─────────────────────────────────┤
+│24 rows (20 shown)      3 columns│
+└─────────────────────────────────┘
+"""

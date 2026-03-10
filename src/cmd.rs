@@ -1,8 +1,11 @@
 use std::io::{self, IsTerminal};
 
-use crate::format::{Format, Preset};
+use crate::{
+    duckbox::{Config as DuckBoxConfig, DuckBox},
+    format::{Format, Preset},
+};
 use anyhow::{Context, Result, bail};
-use duckdb::{Connection, arrow::util::pretty::pretty_format_batches};
+use duckdb::Connection;
 
 pub fn to(conn: &Connection, format: &Format) -> Result<()> {
     if is_pretty(format) {
@@ -68,8 +71,9 @@ fn pretty_query(conn: &Connection, query: &str) -> Result<String> {
         .query_arrow([])
         .context("failed to query pretty output")?
         .collect();
-    let table = pretty_format_batches(&batches).context("failed to format pretty output")?;
-    Ok(table.to_string())
+    DuckBox::new(DuckBoxConfig::default())
+        .render(&batches)
+        .context("failed to format pretty output")
 }
 
 fn is_pretty(format: &Format) -> bool {
