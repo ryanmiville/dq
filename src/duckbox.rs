@@ -133,8 +133,8 @@ impl RenderStyle {
     fn new(color: bool) -> Self {
         if color {
             Self {
-                border: "\u{1b}[38;5;240m",
-                muted: "\u{1b}[38;5;242m",
+                border: "\u{1b}[90m",
+                muted: "\u{1b}[90m",
                 reset: "\u{1b}[0m",
             }
         } else {
