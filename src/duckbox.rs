@@ -821,6 +821,7 @@ mod tests {
         datatypes::{DataType, Field, Schema},
         record_batch::RecordBatch,
     };
+    use indoc::indoc;
     use std::sync::Arc;
 
     fn batch(fields: Vec<Field>, columns: Vec<ArrayRef>) -> RecordBatch {
@@ -850,15 +851,15 @@ mod tests {
 
         assert_eq!(
             table,
-            concat!(
-                "┌─────────┬────────┐\n",
-                "│  name   │  age   │\n",
-                "│ varchar │ bigint │\n",
-                "├─────────┼────────┤\n",
-                "│ Ada     │     37 │\n",
-                "│ Linus   │     54 │\n",
-                "└─────────┴────────┘"
-            )
+            indoc! {"
+                ┌─────────┬────────┐
+                │  name   │  age   │
+                │ varchar │ bigint │
+                ├─────────┼────────┤
+                │ Ada     │     37 │
+                │ Linus   │     54 │
+                └─────────┴────────┘"
+            }
         );
     }
 
@@ -884,8 +885,51 @@ mod tests {
         .render(&[batch])
         .unwrap();
 
-        assert!(table.contains("│ 🦆      │ true    │"), "{table}");
-        assert!(table.contains("│ NULL    │ NULL    │"), "{table}");
+        let expected = indoc! {"
+            ┌─────────┬─────────┐
+            │  emoji  │ active  │
+            │ varchar │ boolean │
+            ├─────────┼─────────┤
+            │ 🦆      │ true    │
+            │ NULL    │ NULL    │
+            └─────────┴─────────┘"
+        };
+        assert_eq!(table, expected);
+    }
+
+    #[test]
+    fn renders_mixed_scalar_columns_exactly() {
+        let batch = batch(
+            vec![
+                Field::new("id", DataType::Int64, false),
+                Field::new("score", DataType::Float64, false),
+                Field::new("active", DataType::Boolean, false),
+            ],
+            vec![
+                Arc::new(Int64Array::from(vec![1, 2])) as ArrayRef,
+                Arc::new(Float64Array::from(vec![1.25, 0.0])) as ArrayRef,
+                Arc::new(BooleanArray::from(vec![false, true])) as ArrayRef,
+            ],
+        );
+
+        let table = DuckBox::new(Config {
+            max_width: 80,
+            color: false,
+            ..Config::default()
+        })
+        .render(&[batch])
+        .unwrap();
+
+        let expected = indoc! {"
+            ┌────────┬────────┬─────────┐
+            │   id   │ score  │ active  │
+            │ bigint │ double │ boolean │
+            ├────────┼────────┼─────────┤
+            │      1 │   1.25 │ false   │
+            │      2 │    0.0 │ true    │
+            └────────┴────────┴─────────┘"
+        };
+        assert_eq!(table, expected);
     }
 
     #[test]
@@ -909,16 +953,25 @@ mod tests {
         .render(&[batch])
         .unwrap();
 
-        assert!(table.contains("│ 1       │"), "{table}");
-        assert!(table.contains("│ 2       │"), "{table}");
-        assert!(
-            table.contains("│ ·       │\n│ ·       │\n│ ·       │"),
-            "{table}"
-        );
-        assert!(table.contains("│ 7       │"), "{table}");
-        assert!(table.contains("│ 8       │"), "{table}");
-        assert!(table.contains("│ 8 rows  │"), "{table}");
-        assert!(table.contains("│ 4 shown │"), "{table}");
+        let expected = indoc! {"
+            ┌─────────┐
+            │  value  │
+            │ varchar │
+            ├─────────┤
+            │ 1       │
+            │ 2       │
+            │ ·       │
+            │ ·       │
+            │ ·       │
+            │ 7       │
+            │ 8       │
+            ├─────────┤
+            │ 8 rows  │
+            │ 4 shown │
+            │1 column │
+            └─────────┘"
+        };
+        assert_eq!(table, expected);
     }
 
     #[test]
@@ -995,6 +1048,69 @@ mod tests {
     }
 
     #[test]
+    fn row_truncation_three_column_snapshot_matches_fixture_coverage() {
+        let batch = batch(
+            vec![
+                Field::new("name", DataType::Utf8, false),
+                Field::new("dept", DataType::Utf8, false),
+                Field::new("n", DataType::Int64, false),
+            ],
+            vec![
+                Arc::new(StringArray::from(
+                    (1..=24)
+                        .map(|i| format!("Employee_{i:03}"))
+                        .collect::<Vec<_>>(),
+                )) as ArrayRef,
+                Arc::new(StringArray::from(vec!["Ops"; 24])) as ArrayRef,
+                Arc::new(Int64Array::from((1..=24).collect::<Vec<_>>())) as ArrayRef,
+            ],
+        );
+
+        let actual = DuckBox::new(Config {
+            max_width: 120,
+            color: false,
+            ..Config::default()
+        })
+        .render(&[batch])
+        .unwrap();
+
+        let expected = indoc! {"
+            ┌──────────────┬─────────┬────────┐
+            │     name     │  dept   │   n    │
+            │   varchar    │ varchar │ bigint │
+            ├──────────────┼─────────┼────────┤
+            │ Employee_001 │ Ops     │      1 │
+            │ Employee_002 │ Ops     │      2 │
+            │ Employee_003 │ Ops     │      3 │
+            │ Employee_004 │ Ops     │      4 │
+            │ Employee_005 │ Ops     │      5 │
+            │ Employee_006 │ Ops     │      6 │
+            │ Employee_007 │ Ops     │      7 │
+            │ Employee_008 │ Ops     │      8 │
+            │ Employee_009 │ Ops     │      9 │
+            │ Employee_010 │ Ops     │     10 │
+            │      ·       │  ·      │     ·  │
+            │      ·       │  ·      │     ·  │
+            │      ·       │  ·      │     ·  │
+            │ Employee_015 │ Ops     │     15 │
+            │ Employee_016 │ Ops     │     16 │
+            │ Employee_017 │ Ops     │     17 │
+            │ Employee_018 │ Ops     │     18 │
+            │ Employee_019 │ Ops     │     19 │
+            │ Employee_020 │ Ops     │     20 │
+            │ Employee_021 │ Ops     │     21 │
+            │ Employee_022 │ Ops     │     22 │
+            │ Employee_023 │ Ops     │     23 │
+            │ Employee_024 │ Ops     │     24 │
+            ├─────────────────────────────────┤
+            │ 24 rows (20 shown)    3 columns │
+            └─────────────────────────────────┘"
+        };
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
     fn colorized_output_wraps_borders_in_ansi_sequences() {
         let batch = batch(
             vec![Field::new("name", DataType::Utf8, false)],
@@ -1015,7 +1131,7 @@ mod tests {
 
     #[test]
     fn colorized_truncation_dots_use_border_styling() {
-        let row = render_divider_row(
+        let actual = render_divider_row(
             &[
                 LayoutColumn {
                     source_index: Some(0),
@@ -1040,13 +1156,12 @@ mod tests {
         let reset = "\u{1b}[0m";
         let dot = format!("{border}·{reset}");
 
-        assert_eq!(row.matches(&dot).count(), 2, "{row:?}");
-        assert_eq!(
-            row,
-            format!(
-                "{border}│{reset}   {dot}         {border}│{reset}     {dot}  {border}│{reset}"
-            )
+        let expected = format!(
+            "{border}│{reset}   {dot}         {border}│{reset}     {dot}  {border}│{reset}"
         );
+
+        assert_eq!(actual.matches(&dot).count(), 2, "{actual:?}");
+        assert_eq!(actual, expected);
     }
 
     #[test]

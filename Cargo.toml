@@ -17,4 +17,5 @@ unicode-width = "0.2.0"
 [dev-dependencies]
 dq_test_fixtures = { path = "dq_test_fixtures" }
 dq_test_macros = { path = "dq_test_macros" }
+indoc = "2.0.7"
 tempfile = "3.26.0"
