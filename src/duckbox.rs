@@ -456,10 +456,16 @@ fn render_table(
     ));
     lines.push(render_segmented_border(&widths, '├', '┼', '┤', style));
 
+    let mut last_data_row: Option<&[String]> = None;
     for row in &selection.rows {
         match row {
-            VisibleRow::Data(values) => lines.push(render_data_row(&layout.columns, values, style)),
-            VisibleRow::Divider => lines.push(render_divider_row(&layout.columns, style)),
+            VisibleRow::Data(values) => {
+                lines.push(render_data_row(&layout.columns, values, style));
+                last_data_row = Some(values);
+            }
+            VisibleRow::Divider => {
+                lines.push(render_divider_row(&layout.columns, last_data_row, style));
+            }
         }
     }
 
@@ -502,13 +508,54 @@ fn render_data_row(columns: &[LayoutColumn], values: &[String], style: &RenderSt
     line
 }
 
-fn render_divider_row(columns: &[LayoutColumn], style: &RenderStyle) -> String {
+fn render_divider_row(
+    columns: &[LayoutColumn],
+    reference_values: Option<&[String]>,
+    style: &RenderStyle,
+) -> String {
     let mut line = style.border_text("│");
     for column in columns {
-        line.push_str(&render_text("·", column.width, Alignment::Center));
+        let reference_value = column
+            .source_index
+            .and_then(|index| reference_values.and_then(|values| values.get(index)))
+            .map(|value| truncate_to_width(value, column.width));
+        line.push_str(&render_divider_text(
+            column.width,
+            column.alignment,
+            reference_value.as_deref(),
+        ));
         line.push_str(&style.border_text("│"));
     }
     line
+}
+
+fn render_divider_text(width: usize, alignment: Alignment, reference_value: Option<&str>) -> String {
+    if let Some(reference_value) = reference_value {
+        let actual_width = display_width(reference_value);
+        if actual_width > 0 {
+            let start = match alignment {
+                Alignment::Left => 0,
+                Alignment::Right => width.saturating_sub(actual_width),
+                Alignment::Center => width.saturating_sub(actual_width) / 2,
+            };
+            let dot_offset = start + (actual_width - 1) / 2;
+            let right_padding = width.saturating_sub(dot_offset + 1);
+            return format!(
+                " {}·{} ",
+                " ".repeat(dot_offset),
+                " ".repeat(right_padding)
+            );
+        }
+    }
+
+    render_text("·", width, divider_alignment(alignment))
+}
+
+fn divider_alignment(alignment: Alignment) -> Alignment {
+    match alignment {
+        Alignment::Right => Alignment::Right,
+        Alignment::Left | Alignment::Center => Alignment::Center,
+    }
 }
 
 fn render_footer_lines(inner_width: usize, footer: &Footer, style: &RenderStyle) -> Vec<String> {
@@ -851,13 +898,57 @@ mod tests {
         assert!(table.contains("│ 1       │"), "{table}");
         assert!(table.contains("│ 2       │"), "{table}");
         assert!(
-            table.contains("│    ·    │\n│    ·    │\n│    ·    │"),
+            table.contains("│ ·       │\n│ ·       │\n│ ·       │"),
             "{table}"
         );
         assert!(table.contains("│ 7       │"), "{table}");
         assert!(table.contains("│ 8       │"), "{table}");
         assert!(table.contains("│ 8 rows  │"), "{table}");
         assert!(table.contains("│ 4 shown │"), "{table}");
+    }
+
+    #[test]
+    fn divider_rows_follow_reference_value_positioning() {
+        let row = render_divider_row(
+            &[
+                LayoutColumn {
+                    source_index: Some(0),
+                    name: "dept".to_string(),
+                    type_name: "varchar".to_string(),
+                    alignment: Alignment::Left,
+                    width: 11,
+                },
+                LayoutColumn {
+                    source_index: Some(1),
+                    name: "n".to_string(),
+                    type_name: "bigint".to_string(),
+                    alignment: Alignment::Right,
+                    width: 6,
+                },
+                LayoutColumn {
+                    source_index: Some(2),
+                    name: "active".to_string(),
+                    type_name: "boolean".to_string(),
+                    alignment: Alignment::Left,
+                    width: 7,
+                },
+                LayoutColumn {
+                    source_index: None,
+                    name: "…".to_string(),
+                    type_name: "…".to_string(),
+                    alignment: Alignment::Center,
+                    width: 3,
+                },
+            ],
+            Some(&[
+                "Sales".to_string(),
+                "10".to_string(),
+                "true".to_string(),
+            ]),
+            &RenderStyle::new(false),
+        );
+
+        assert_eq!(row, "│   ·         │     ·  │  ·      │  ·  │");
     }
 
     #[test]
