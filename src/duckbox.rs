@@ -515,7 +515,7 @@ fn render_footer_lines(inner_width: usize, footer: &Footer, style: &RenderStyle)
     let left_plain = footer_plain_side(&footer.left_primary, footer.left_secondary.as_deref());
     let right_plain = footer_plain_side(&footer.right_primary, footer.right_secondary.as_deref());
 
-    if display_width(&left_plain) + display_width(&right_plain) <= inner_width {
+    if inner_width >= 2 && display_width(&left_plain) + display_width(&right_plain) <= inner_width - 2 {
         let left = render_footer_side(
             &footer.left_primary,
             footer.left_secondary.as_deref(),
@@ -526,13 +526,14 @@ fn render_footer_lines(inner_width: usize, footer: &Footer, style: &RenderStyle)
             footer.right_secondary.as_deref(),
             style,
         );
-        let spaces = inner_width - display_width(&left_plain) - display_width(&right_plain);
+        let spaces = inner_width - 2 - display_width(&left_plain) - display_width(&right_plain);
         return vec![format!(
-            "{}{}{}{}",
+            "{} {}{}{} {}",
             style.border_text("│"),
             left,
             " ".repeat(spaces),
-            format!("{}{}", right, style.border_text("│"))
+            right,
+            style.border_text("│")
         )];
     }
 
@@ -887,7 +888,7 @@ mod tests {
         .unwrap();
 
         assert!(
-            table.contains("│24 rows (20 shown)      3 columns│"),
+            table.contains("│ 24 rows (20 shown)    3 columns │"),
             "{table}"
         );
     }

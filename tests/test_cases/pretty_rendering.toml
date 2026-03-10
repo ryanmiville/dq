@@ -79,6 +79,6 @@ stdout = """
 │ Employee_023 │ Ops     │     23 │
 │ Employee_024 │ Ops     │     24 │
 ├─────────────────────────────────┤
-│24 rows (20 shown)      3 columns│
+│ 24 rows (20 shown)    3 columns │
 └─────────────────────────────────┘
 """
