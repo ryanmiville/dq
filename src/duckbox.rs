@@ -523,13 +523,21 @@ fn render_divider_row(
             column.width,
             column.alignment,
             reference_value.as_deref(),
+            style,
         ));
         line.push_str(&style.border_text("│"));
     }
     line
 }
 
-fn render_divider_text(width: usize, alignment: Alignment, reference_value: Option<&str>) -> String {
+fn render_divider_text(
+    width: usize,
+    alignment: Alignment,
+    reference_value: Option<&str>,
+    style: &RenderStyle,
+) -> String {
+    let dot = style.border_text("·");
+
     if let Some(reference_value) = reference_value {
         let actual_width = display_width(reference_value);
         if actual_width > 0 {
@@ -541,14 +549,18 @@ fn render_divider_text(width: usize, alignment: Alignment, reference_value: Opti
             let dot_offset = start + (actual_width - 1) / 2;
             let right_padding = width.saturating_sub(dot_offset + 1);
             return format!(
-                " {}·{} ",
+                " {}{}{} ",
                 " ".repeat(dot_offset),
+                dot,
                 " ".repeat(right_padding)
             );
         }
     }
 
-    render_text("·", width, divider_alignment(alignment))
+    format!(
+        " {} ",
+        pad("·", width, divider_alignment(alignment)).replacen('·', &dot, 1)
+    )
 }
 
 fn divider_alignment(alignment: Alignment) -> Alignment {
@@ -1001,6 +1013,42 @@ mod tests {
 
         assert!(table.contains("\u{1b}[38;5;240m┌"), "{table:?}");
         assert!(table.contains("Ada"), "{table:?}");
+    }
+
+    #[test]
+    fn colorized_truncation_dots_use_border_styling() {
+        let row = render_divider_row(
+            &[
+                LayoutColumn {
+                    source_index: Some(0),
+                    name: "dept".to_string(),
+                    type_name: "varchar".to_string(),
+                    alignment: Alignment::Left,
+                    width: 11,
+                },
+                LayoutColumn {
+                    source_index: Some(1),
+                    name: "n".to_string(),
+                    type_name: "bigint".to_string(),
+                    alignment: Alignment::Right,
+                    width: 6,
+                },
+            ],
+            Some(&["Sales".to_string(), "10".to_string()]),
+            &RenderStyle::new(true),
+        );
+
+        let border = "\u{1b}[38;5;240m";
+        let reset = "\u{1b}[0m";
+        let dot = format!("{border}·{reset}");
+
+        assert_eq!(row.matches(&dot).count(), 2, "{row:?}");
+        assert_eq!(
+            row,
+            format!(
+                "{border}│{reset}   {dot}         {border}│{reset}     {dot}  {border}│{reset}"
+            )
+        );
     }
 
     #[test]

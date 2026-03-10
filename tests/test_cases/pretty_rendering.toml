@@ -82,3 +82,68 @@ stdout = """
 │ 24 rows (20 shown)    3 columns │
 └─────────────────────────────────┘
 """
+
+[[cases]]
+name = "row_truncation_alignment_reference"
+input = """
+[
+    {"id":1,"name":"Employee_001","dept":"HR","title":"Analyst","city":"Boston","salary":92310.11,"tenure":2,"active":true,"rating":4.1},
+    {"id":2,"name":"Employee_002","dept":"Legal","title":"Manager","city":"Chicago","salary":101203.45,"tenure":4,"active":false,"rating":3.9},
+    {"id":3,"name":"Employee_003","dept":"Finance","title":"Director","city":"New York","salary":132450.0,"tenure":7,"active":true,"rating":4.8},
+    {"id":4,"name":"Employee_004","dept":"Marketing","title":"Specialist","city":"Denver","salary":84500.25,"tenure":1,"active":true,"rating":3.6},
+    {"id":5,"name":"Employee_005","dept":"Engineering","title":"Engineer","city":"Seattle","salary":143220.4,"tenure":5,"active":true,"rating":4.9},
+    {"id":6,"name":"Employee_006","dept":"Support","title":"Lead","city":"Austin","salary":78440.0,"tenure":6,"active":false,"rating":2.7},
+    {"id":7,"name":"Employee_007","dept":"Product","title":"Designer","city":"Portland","salary":119330.33,"tenure":3,"active":true,"rating":4.0},
+    {"id":8,"name":"Employee_008","dept":"Operations","title":"Manager","city":"Boston","salary":111875.9,"tenure":9,"active":false,"rating":3.2},
+    {"id":9,"name":"Employee_009","dept":"Operations","title":"Director","city":"Seattle","salary":150273.05,"tenure":21,"active":true,"rating":3.4},
+    {"id":10,"name":"Employee_010","dept":"Sales","title":"Director","city":"Chicago","salary":114339.03,"tenure":8,"active":true,"rating":3.7},
+    {"id":11,"name":"Employee_011","dept":"HR","title":"Coordinator","city":"Denver","salary":68110.18,"tenure":2,"active":false,"rating":2.9},
+    {"id":12,"name":"Employee_012","dept":"Legal","title":"VP","city":"New York","salary":172002.77,"tenure":10,"active":true,"rating":4.2},
+    {"id":13,"name":"Employee_013","dept":"Finance","title":"Analyst","city":"Boston","salary":93882.44,"tenure":11,"active":true,"rating":3.1},
+    {"id":14,"name":"Employee_014","dept":"Support","title":"Engineer","city":"Austin","salary":89004.12,"tenure":12,"active":false,"rating":3.3},
+    {"id":15,"name":"Employee_015","dept":"Product","title":"Director","city":"Seattle","salary":160400.0,"tenure":13,"active":true,"rating":4.4},
+    {"id":16,"name":"Employee_016","dept":"Marketing","title":"Coordinator","city":"Chicago","salary":74500.6,"tenure":14,"active":true,"rating":2.8},
+    {"id":17,"name":"Employee_017","dept":"Engineering","title":"Manager","city":"Denver","salary":138775.88,"tenure":15,"active":false,"rating":3.5},
+    {"id":18,"name":"Employee_018","dept":"Sales","title":"Analyst","city":"Boston","salary":99550.1,"tenure":16,"active":true,"rating":3.0},
+    {"id":19,"name":"Employee_019","dept":"Operations","title":"Engineer","city":"Denver","salary":118290.86,"tenure":3,"active":false,"rating":4.5},
+    {"id":20,"name":"Employee_020","dept":"HR","title":"Director","city":"New York","salary":81130.74,"tenure":18,"active":true,"rating":1.3},
+    {"id":21,"name":"Employee_021","dept":"Finance","title":"Lead","city":"Seattle","salary":126420.21,"tenure":19,"active":false,"rating":4.1},
+    {"id":22,"name":"Employee_022","dept":"Legal","title":"Manager","city":"Chicago","salary":117830.55,"tenure":20,"active":true,"rating":2.6},
+    {"id":23,"name":"Employee_023","dept":"Support","title":"Coordinator","city":"Boston","salary":70220.42,"tenure":22,"active":false,"rating":2.4},
+    {"id":24,"name":"Employee_024","dept":"Marketing","title":"VP","city":"Austin","salary":182990.99,"tenure":24,"active":true,"rating":4.7}
+]
+"""
+[cases.expect]
+kind = "exact"
+stdout = """
+┌────────┬──────────────┬─────────────┬─────────────┬──────────┬───────────┬────────┬─────────┬────────┐
+│   id   │     name     │    dept     │    title    │   city   │  salary   │ tenure │ active  │ rating │
+│ bigint │   varchar    │   varchar   │   varchar   │ varchar  │  double   │ bigint │ boolean │ double │
+├────────┼──────────────┼─────────────┼─────────────┼──────────┼───────────┼────────┼─────────┼────────┤
+│      1 │ Employee_001 │ HR          │ Analyst     │ Boston   │  92310.11 │      2 │ true    │    4.1 │
+│      2 │ Employee_002 │ Legal       │ Manager     │ Chicago  │ 101203.45 │      4 │ false   │    3.9 │
+│      3 │ Employee_003 │ Finance     │ Director    │ New York │  132450.0 │      7 │ true    │    4.8 │
+│      4 │ Employee_004 │ Marketing   │ Specialist  │ Denver   │  84500.25 │      1 │ true    │    3.6 │
+│      5 │ Employee_005 │ Engineering │ Engineer    │ Seattle  │  143220.4 │      5 │ true    │    4.9 │
+│      6 │ Employee_006 │ Support     │ Lead        │ Austin   │   78440.0 │      6 │ false   │    2.7 │
+│      7 │ Employee_007 │ Product     │ Designer    │ Portland │ 119330.33 │      3 │ true    │    4.0 │
+│      8 │ Employee_008 │ Operations  │ Manager     │ Boston   │  111875.9 │      9 │ false   │    3.2 │
+│      9 │ Employee_009 │ Operations  │ Director    │ Seattle  │ 150273.05 │     21 │ true    │    3.4 │
+│     10 │ Employee_010 │ Sales       │ Director    │ Chicago  │ 114339.03 │      8 │ true    │    3.7 │
+│     ·  │      ·       │   ·         │    ·        │    ·     │     ·     │      · │  ·      │     ·  │
+│     ·  │      ·       │   ·         │    ·        │    ·     │     ·     │      · │  ·      │     ·  │
+│     ·  │      ·       │   ·         │    ·        │    ·     │     ·     │      · │  ·      │     ·  │
+│     15 │ Employee_015 │ Product     │ Director    │ Seattle  │  160400.0 │     13 │ true    │    4.4 │
+│     16 │ Employee_016 │ Marketing   │ Coordinator │ Chicago  │   74500.6 │     14 │ true    │    2.8 │
+│     17 │ Employee_017 │ Engineering │ Manager     │ Denver   │ 138775.88 │     15 │ false   │    3.5 │
+│     18 │ Employee_018 │ Sales       │ Analyst     │ Boston   │   99550.1 │     16 │ true    │    3.0 │
+│     19 │ Employee_019 │ Operations  │ Engineer    │ Denver   │ 118290.86 │      3 │ false   │    4.5 │
+│     20 │ Employee_020 │ HR          │ Director    │ New York │  81130.74 │     18 │ true    │    1.3 │
+│     21 │ Employee_021 │ Finance     │ Lead        │ Seattle  │ 126420.21 │     19 │ false   │    4.1 │
+│     22 │ Employee_022 │ Legal       │ Manager     │ Chicago  │ 117830.55 │     20 │ true    │    2.6 │
+│     23 │ Employee_023 │ Support     │ Coordinator │ Boston   │  70220.42 │     22 │ false   │    2.4 │
+│     24 │ Employee_024 │ Marketing   │ VP          │ Austin   │ 182990.99 │     24 │ true    │    4.7 │
+├──────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 24 rows (20 shown)                                                                         9 columns │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────┘
+"""
