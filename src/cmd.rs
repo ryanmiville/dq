@@ -62,7 +62,7 @@ fn pretty_query(conn: &Connection, query: &str) -> Result<String> {
         .query_arrow([])
         .context("failed to query pretty output")?
         .collect();
-    DuckBox::new(DuckBoxConfig::default())
+    DuckBox::default()
         .render(&batches)
         .context("failed to format pretty output")
 }

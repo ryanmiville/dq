@@ -73,6 +73,12 @@ impl DuckBox {
     }
 }
 
+impl Default for DuckBox {
+    fn default() -> Self {
+        Self::new(Config::default())
+    }
+}
+
 #[derive(Clone, Debug)]
 struct ColumnMeta {
     name: String,
