@@ -32,9 +32,9 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            max_width: 0,
-            max_rows: 20,
-            max_col_width: 20,
+            max_width: parse_env_var("DQ_MAX_WIDTH").unwrap_or(0),
+            max_rows: parse_env_var("DQ_MAX_ROWS").unwrap_or(20),
+            max_col_width: parse_env_var("DQ_MAX_COL_WIDTH").unwrap_or(20),
             null_value: "NULL".to_string(),
             color: io::stdout().is_terminal() && env::var_os("NO_COLOR").is_none(),
         }
@@ -106,6 +106,16 @@ struct LayoutColumn {
 struct LayoutPlan {
     columns: Vec<LayoutColumn>,
     hidden_columns: usize,
+}
+
+#[derive(Clone, Debug)]
+struct LayoutCandidate {
+    hidden_range: (usize, usize),
+    widths: Vec<usize>,
+    total_width: usize,
+    visible_source_columns: usize,
+    left_visible_columns: usize,
+    right_visible_columns: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -258,17 +268,141 @@ fn fit_columns(
     max_width: usize,
     max_col_width: usize,
 ) -> LayoutPlan {
-    let mut widths = natural_widths.to_vec();
+    if total_table_width(natural_widths) <= max_width {
+        return build_layout(columns, natural_widths, None);
+    }
 
-    if total_table_width(&widths) > max_width {
-        for width in &mut widths {
-            *width = (*width).min(max_col_width.max(3));
+    let preferred_widths = preferred_widths(natural_widths, max_col_width);
+
+    if total_table_width(&preferred_widths) <= max_width {
+        return build_layout(columns, &preferred_widths, None);
+    }
+
+    if let Some(candidate) = choose_pruned_candidate(&preferred_widths, max_width, false) {
+        return build_layout(columns, &candidate.widths, Some(candidate.hidden_range));
+    }
+
+    if let Some(candidate) = choose_pruned_candidate(&preferred_widths, max_width, true) {
+        return build_layout(columns, &candidate.widths, Some(candidate.hidden_range));
+    }
+
+    let mut widths = preferred_widths;
+    shrink_widths(&mut widths, max_width, 3);
+    if total_table_width(&widths) <= max_width {
+        return build_layout(columns, &widths, None);
+    }
+
+    LayoutPlan {
+        columns: columns
+            .iter()
+            .enumerate()
+            .take(1)
+            .map(|(index, column)| LayoutColumn {
+                source_index: Some(index),
+                name: column.name.clone(),
+                type_name: column.type_name.clone(),
+                alignment: column.alignment,
+                width: widths[index],
+            })
+            .collect(),
+        hidden_columns: columns.len().saturating_sub(1),
+    }
+}
+
+fn preferred_widths(natural_widths: &[usize], max_col_width: usize) -> Vec<usize> {
+    let max_col_width = max_col_width.max(3);
+    natural_widths
+        .iter()
+        .map(|width| (*width).min(max_col_width))
+        .collect()
+}
+
+fn choose_pruned_candidate(
+    preferred_widths: &[usize],
+    max_width: usize,
+    allow_shrink: bool,
+) -> Option<LayoutCandidate> {
+    let mut best = None;
+
+    for hidden_range in hidden_ranges(preferred_widths.len()) {
+        let mut widths = preferred_widths.to_vec();
+        if allow_shrink {
+            shrink_widths_for_hidden_range(&mut widths, hidden_range, max_width, 3);
+        }
+
+        let total_width = total_width_for_hidden_range(&widths, hidden_range);
+        if total_width > max_width {
+            continue;
+        }
+
+        let candidate = LayoutCandidate {
+            hidden_range,
+            widths,
+            total_width,
+            visible_source_columns: preferred_widths.len() - hidden_range_width(hidden_range),
+            left_visible_columns: hidden_range.0,
+            right_visible_columns: preferred_widths.len() - hidden_range.1 - 1,
+        };
+
+        let replace = best
+            .as_ref()
+            .map(|current| is_better_candidate(&candidate, current))
+            .unwrap_or(true);
+        if replace {
+            best = Some(candidate);
         }
     }
 
-    shrink_widths(&mut widths, max_width, 3);
+    best
+}
 
-    if total_table_width(&widths) <= max_width {
+fn is_better_candidate(candidate: &LayoutCandidate, current: &LayoutCandidate) -> bool {
+    match candidate
+        .visible_source_columns
+        .cmp(&current.visible_source_columns)
+    {
+        std::cmp::Ordering::Greater => return true,
+        std::cmp::Ordering::Less => return false,
+        std::cmp::Ordering::Equal => {}
+    }
+
+    let candidate_balance = candidate
+        .left_visible_columns
+        .min(candidate.right_visible_columns);
+    let current_balance = current
+        .left_visible_columns
+        .min(current.right_visible_columns);
+    match candidate_balance.cmp(&current_balance) {
+        std::cmp::Ordering::Greater => return true,
+        std::cmp::Ordering::Less => return false,
+        std::cmp::Ordering::Equal => {}
+    }
+
+    let candidate_imbalance = candidate
+        .left_visible_columns
+        .abs_diff(candidate.right_visible_columns);
+    let current_imbalance = current
+        .left_visible_columns
+        .abs_diff(current.right_visible_columns);
+    match candidate_imbalance.cmp(&current_imbalance) {
+        std::cmp::Ordering::Less => return true,
+        std::cmp::Ordering::Greater => return false,
+        std::cmp::Ordering::Equal => {}
+    }
+
+    match candidate.total_width.cmp(&current.total_width) {
+        std::cmp::Ordering::Greater => true,
+        std::cmp::Ordering::Less => false,
+        std::cmp::Ordering::Equal => candidate.hidden_range.0 < current.hidden_range.0,
+    }
+}
+
+fn build_layout(
+    columns: &[ColumnMeta],
+    widths: &[usize],
+    hidden_range: Option<(usize, usize)>,
+) -> LayoutPlan {
+    let Some((hidden_start, hidden_end)) = hidden_range else {
         return LayoutPlan {
             columns: columns
                 .iter()
@@ -283,44 +417,9 @@ fn fit_columns(
                 .collect(),
             hidden_columns: 0,
         };
-    }
+    };
 
-    let removal_order = middle_out_removal_order(columns.len());
-    let mut hidden: Vec<usize> = Vec::new();
-    let mut fallback = None;
-
-    for index in removal_order {
-        hidden.push(index);
-        hidden.sort_unstable();
-        let candidate = build_pruned_layout(columns, &widths, &hidden);
-        if total_layout_width(&candidate.columns) <= max_width {
-            return candidate;
-        }
-        fallback = Some(candidate);
-    }
-
-    fallback.unwrap_or_else(|| LayoutPlan {
-        columns: columns
-            .iter()
-            .enumerate()
-            .take(1)
-            .map(|(index, column)| LayoutColumn {
-                source_index: Some(index),
-                name: column.name.clone(),
-                type_name: column.type_name.clone(),
-                alignment: column.alignment,
-                width: widths[index].min(max_col_width.max(3)),
-            })
-            .collect(),
-        hidden_columns: columns.len().saturating_sub(1),
-    })
-}
-
-fn build_pruned_layout(columns: &[ColumnMeta], widths: &[usize], hidden: &[usize]) -> LayoutPlan {
-    let hidden_start = *hidden.first().expect("hidden columns should not be empty");
-    let hidden_end = *hidden.last().expect("hidden columns should not be empty");
-    let hidden_count = hidden_end - hidden_start + 1;
-
+    let hidden_count = hidden_range_width((hidden_start, hidden_end));
     let mut layout = Vec::with_capacity(columns.len() - hidden_count + 1);
     for (index, column) in columns.iter().enumerate() {
         if index == hidden_start {
@@ -352,34 +451,71 @@ fn build_pruned_layout(columns: &[ColumnMeta], widths: &[usize], hidden: &[usize
     }
 }
 
-fn middle_out_removal_order(len: usize) -> Vec<usize> {
-    if len == 0 {
+fn hidden_ranges(len: usize) -> Vec<(usize, usize)> {
+    if len < 3 {
         return Vec::new();
     }
 
-    let mut order = Vec::with_capacity(len);
-    let left_center = (len - 1) / 2;
-    let right_center = len / 2;
-
-    if left_center == right_center {
-        order.push(left_center);
-    } else {
-        order.push(right_center);
-        order.push(left_center);
-    }
-
-    let mut offset = 1;
-    while order.len() < len {
-        if left_center >= offset {
-            order.push(left_center - offset);
+    let mut ranges = Vec::new();
+    for start in 1..len - 1 {
+        for end in start..=len - 2 {
+            ranges.push((start, end));
         }
-        if right_center + offset < len {
-            order.push(right_center + offset);
-        }
-        offset += 1;
     }
+    ranges
+}
 
-    order
+fn hidden_range_width(hidden_range: (usize, usize)) -> usize {
+    hidden_range.1 - hidden_range.0 + 1
+}
+
+fn total_width_for_hidden_range(widths: &[usize], hidden_range: (usize, usize)) -> usize {
+    let (hidden_start, hidden_end) = hidden_range;
+    let mut layout_widths = Vec::with_capacity(widths.len() - hidden_range_width(hidden_range) + 1);
+    layout_widths.extend_from_slice(&widths[..hidden_start]);
+    layout_widths.push(1);
+    layout_widths.extend_from_slice(&widths[hidden_end + 1..]);
+    total_table_width(&layout_widths)
+}
+
+fn shrink_widths_for_hidden_range(
+    widths: &mut [usize],
+    hidden_range: (usize, usize),
+    max_width: usize,
+    min_width: usize,
+) {
+    let visible_indices = (0..hidden_range.0)
+        .chain(hidden_range.1 + 1..widths.len())
+        .collect::<Vec<_>>();
+    let mut current_width = total_width_for_hidden_range(widths, hidden_range);
+
+    while current_width > max_width {
+        let Some(max_seen) = visible_indices.iter().map(|index| widths[*index]).max() else {
+            return;
+        };
+        if max_seen <= min_width {
+            return;
+        }
+
+        let mut changed = false;
+        let widest_indices = visible_indices
+            .iter()
+            .copied()
+            .filter(|index| widths[*index] == max_seen)
+            .collect::<Vec<_>>();
+        for index in widest_indices {
+            if current_width <= max_width {
+                break;
+            }
+            widths[index] -= 1;
+            current_width -= 1;
+            changed = true;
+        }
+
+        if !changed {
+            return;
+        }
+    }
 }
 
 fn shrink_widths(widths: &mut [usize], max_width: usize, min_width: usize) {
@@ -821,6 +957,10 @@ fn display_type_name(data_type: &DataType) -> String {
     }
 }
 
+fn parse_env_var(var_name: &str) -> Option<usize> {
+    env::var(var_name).ok().and_then(|s| s.parse().ok())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1171,6 +1311,53 @@ mod tests {
 
         assert_eq!(actual.matches(&dot).count(), 2, "{actual:?}");
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn max_width_prefers_omitting_middle_columns_over_truncating_everything() {
+        let batch = batch(
+            vec![
+                Field::new("id", DataType::Int64, false),
+                Field::new("name", DataType::Utf8, false),
+                Field::new("department", DataType::Utf8, false),
+                Field::new("title", DataType::Utf8, false),
+                Field::new("city", DataType::Utf8, false),
+                Field::new("salary", DataType::Float64, false),
+                Field::new("years_exp", DataType::Int64, false),
+                Field::new("active", DataType::Boolean, false),
+                Field::new("rating", DataType::Float64, false),
+            ],
+            vec![
+                Arc::new(Int64Array::from(vec![1])) as ArrayRef,
+                Arc::new(StringArray::from(vec!["Employee_001"])) as ArrayRef,
+                Arc::new(StringArray::from(vec!["Marketing"])) as ArrayRef,
+                Arc::new(StringArray::from(vec!["Engineer"])) as ArrayRef,
+                Arc::new(StringArray::from(vec!["Seattle"])) as ArrayRef,
+                Arc::new(Float64Array::from(vec![81730.0])) as ArrayRef,
+                Arc::new(Int64Array::from(vec![4])) as ArrayRef,
+                Arc::new(BooleanArray::from(vec![true])) as ArrayRef,
+                Arc::new(Float64Array::from(vec![3.7])) as ArrayRef,
+            ],
+        );
+
+        let table = DuckBox::new(Config {
+            max_width: 75,
+            color: false,
+            ..Config::default()
+        })
+        .render(&[batch])
+        .unwrap();
+
+        assert!(table.contains("department"), "{table}");
+        assert!(table.contains("years_exp"), "{table}");
+        assert!(
+            table.contains("│ … │") || table.contains("│  …  │"),
+            "{table}"
+        );
+        assert!(table.contains("9 columns"), "{table}");
+        assert!(table.contains("6 shown"), "{table}");
+        assert!(!table.contains("depa…"), "{table}");
+        assert!(!table.contains("year…"), "{table}");
     }
 
     #[test]
