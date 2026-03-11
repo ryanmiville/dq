@@ -426,7 +426,7 @@ fn build_layout(
             layout.push(LayoutColumn {
                 source_index: None,
                 name: "…".to_string(),
-                type_name: "…".to_string(),
+                type_name: String::new(),
                 alignment: Alignment::Center,
                 width: 1,
             });
@@ -633,7 +633,13 @@ fn render_column_row(
 ) -> String {
     let mut line = style.border_text("│");
     for column in columns {
-        line.push_str(&render_text(value_for(column), column.width, alignment));
+        line.push_str(&render_text_styled(
+            value_for(column),
+            column.width,
+            alignment,
+            column.source_index.is_none(),
+            style,
+        ));
         line.push_str(&style.border_text("│"));
     }
     line
@@ -646,7 +652,13 @@ fn render_data_row(columns: &[LayoutColumn], values: &[String], style: &RenderSt
             .source_index
             .map(|index| values[index].as_str())
             .unwrap_or("…");
-        line.push_str(&render_text(value, column.width, column.alignment));
+        line.push_str(&render_text_styled(
+            value,
+            column.width,
+            column.alignment,
+            column.source_index.is_none(),
+            style,
+        ));
         line.push_str(&style.border_text("│"));
     }
     line
@@ -830,6 +842,38 @@ fn render_full_border(inner_width: usize, left: char, right: char, style: &Rende
 fn render_text(value: &str, width: usize, alignment: Alignment) -> String {
     let truncated = truncate_to_width(value, width);
     format!(" {} ", pad(&truncated, width, alignment))
+}
+
+fn render_text_styled(
+    value: &str,
+    width: usize,
+    alignment: Alignment,
+    muted: bool,
+    style: &RenderStyle,
+) -> String {
+    let truncated = truncate_to_width(value, width);
+    if !muted {
+        return render_text(&truncated, width, alignment);
+    }
+
+    let actual_width = display_width(&truncated);
+    let padding = width.saturating_sub(actual_width);
+    let (left, right) = match alignment {
+        Alignment::Left => (0, padding),
+        Alignment::Right => (padding, 0),
+        Alignment::Center => {
+            let left = padding / 2;
+            let right = padding - left;
+            (left, right)
+        }
+    };
+
+    format!(
+        " {}{}{} ",
+        " ".repeat(left),
+        style.muted_text(&truncated),
+        " ".repeat(right)
+    )
 }
 
 fn pad(value: &str, width: usize, alignment: Alignment) -> String {
@@ -1311,6 +1355,93 @@ mod tests {
 
         assert_eq!(actual.matches(&dot).count(), 2, "{actual:?}");
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn colorized_hidden_column_ellipsis_uses_muted_styling() {
+        let actual = render_data_row(
+            &[
+                LayoutColumn {
+                    source_index: Some(0),
+                    name: "name".to_string(),
+                    type_name: "varchar".to_string(),
+                    alignment: Alignment::Left,
+                    width: 2,
+                },
+                LayoutColumn {
+                    source_index: None,
+                    name: "…".to_string(),
+                    type_name: "…".to_string(),
+                    alignment: Alignment::Center,
+                    width: 1,
+                },
+            ],
+            &["ok".to_string()],
+            &RenderStyle::new(true),
+        );
+
+        let border = GRAY;
+        let reset = "\u{1b}[0m";
+        let muted = format!("{border}…{reset}");
+        let expected = format!("{border}│{reset} ok {border}│{reset} {muted} {border}│{reset}");
+
+        assert!(actual.contains(&muted), "{actual:?}");
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn hidden_column_placeholder_type_row_is_blank() {
+        let layout = build_layout(
+            &[
+                ColumnMeta {
+                    name: "a".to_string(),
+                    type_name: "x".to_string(),
+                    alignment: Alignment::Left,
+                },
+                ColumnMeta {
+                    name: "b".to_string(),
+                    type_name: "y".to_string(),
+                    alignment: Alignment::Left,
+                },
+                ColumnMeta {
+                    name: "c".to_string(),
+                    type_name: "z".to_string(),
+                    alignment: Alignment::Left,
+                },
+            ],
+            &[1, 1, 1],
+            Some((1, 1)),
+        );
+        let style = RenderStyle::new(false);
+
+        assert_eq!(layout.columns[1].name, "…");
+        assert_eq!(layout.columns[1].type_name, "");
+        assert_eq!(
+            render_column_row(
+                &layout.columns,
+                |column| column.name.as_str(),
+                Alignment::Center,
+                &style,
+            ),
+            "│ a │ … │ c │"
+        );
+        assert_eq!(
+            render_column_row(
+                &layout.columns,
+                |column| column.type_name.as_str(),
+                Alignment::Center,
+                &style,
+            ),
+            "│ x │   │ z │"
+        );
+        assert_eq!(
+            render_data_row(
+                &layout.columns,
+                &["1".to_string(), "2".to_string(), "3".to_string()],
+                &style,
+            ),
+            "│ 1 │ … │ 3 │"
+        );
     }
 
     #[test]
