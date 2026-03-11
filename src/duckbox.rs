@@ -129,6 +129,8 @@ enum VisibleRow {
     Divider,
 }
 
+const GRAY: &str = "\u{1b}[90m";
+
 struct RenderStyle {
     border: &'static str,
     muted: &'static str,
@@ -139,8 +141,8 @@ impl RenderStyle {
     fn new(color: bool) -> Self {
         if color {
             Self {
-                border: "\u{1b}[90m",
-                muted: "\u{1b}[90m",
+                border: GRAY,
+                muted: GRAY,
                 reset: "\u{1b}[0m",
             }
         } else {
@@ -477,7 +479,7 @@ fn render_table(
 
     if let Some(footer) = footer {
         let inner_width = total_layout_width(&layout.columns).saturating_sub(2);
-        lines.push(render_full_border(inner_width, '├', '┤', style));
+        lines.push(render_segmented_border(&widths, '├', '┴', '┤', style));
         lines.extend(render_footer_lines(inner_width, footer, style));
         lines.push(render_full_border(inner_width, '└', '┘', style));
     } else {
@@ -1108,7 +1110,7 @@ mod tests {
             │ Employee_022 │ Ops     │     22 │
             │ Employee_023 │ Ops     │     23 │
             │ Employee_024 │ Ops     │     24 │
-            ├─────────────────────────────────┤
+            ├──────────────┴─────────┴────────┤
             │ 24 rows (20 shown)    3 columns │
             └─────────────────────────────────┘"
         };
@@ -1131,7 +1133,8 @@ mod tests {
         .render(&[batch])
         .unwrap();
 
-        assert!(table.contains("\u{1b}[38;5;240m┌"), "{table:?}");
+        let p = format!("{}┌", GRAY);
+        assert!(table.contains(p.as_str()), "{table:?}");
         assert!(table.contains("Ada"), "{table:?}");
     }
 
@@ -1158,7 +1161,7 @@ mod tests {
             &RenderStyle::new(true),
         );
 
-        let border = "\u{1b}[38;5;240m";
+        let border = GRAY;
         let reset = "\u{1b}[0m";
         let dot = format!("{border}·{reset}");
 

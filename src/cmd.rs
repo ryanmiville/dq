@@ -1,9 +1,6 @@
 use std::io::{self, IsTerminal};
 
-use crate::{
-    duckbox::{Config as DuckBoxConfig, DuckBox},
-    format::Format,
-};
+use crate::{duckbox::DuckBox, format::Format};
 use anyhow::{Context, Result};
 use duckdb::Connection;
 
