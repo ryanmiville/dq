@@ -10,7 +10,7 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.100"
 clap = { version = "4.5.60", features = ["derive"] }
-duckdb = { version = "1.4.4", features = ["bundled"] }
+duckdb = { version = "=1.4.4", features = ["bundled"] }
 terminal_size = "0.4.3"
 unicode-width = "0.2.0"
 
