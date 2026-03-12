@@ -28,6 +28,11 @@ pub fn where_clause(conn: &Connection, clause: &str) -> Result<()> {
     emit_relation_query(conn, &query).context("failed to filter data")
 }
 
+pub fn limit(conn: &Connection, count: &str) -> Result<()> {
+    let query = format!("SELECT * FROM read_arrow('/dev/stdin') LIMIT {count}");
+    emit_relation_query(conn, &query).context("failed to limit rows")
+}
+
 fn emit_relation_query(conn: &Connection, query: &str) -> Result<()> {
     match output_mode() {
         OutputMode::Arrow => emit_arrow_query(conn, query),

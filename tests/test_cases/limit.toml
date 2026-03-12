@@ -1,0 +1,34 @@
+cmd = "{dq} from jsonl | {dq} limit 2 | {dq} to jsonl"
+
+[[cases]]
+name = "limits_rows"
+input = """
+{"name":"Ada","age":37}
+{"name":"Linus","age":54}
+{"name":"Grace","age":40}
+"""
+[cases.expect]
+kind = "exact"
+stdout = """
+{"name":"Ada","age":37}
+{"name":"Linus","age":54}
+"""
+
+[[cases]]
+name = "fewer_rows_than_limit"
+input = """
+{"name":"Ada","age":37}
+"""
+[cases.expect]
+kind = "exact"
+stdout = """
+{"name":"Ada","age":37}
+"""
+
+[[cases]]
+name = "empty"
+input = ""
+[cases.expect]
+kind = "exact"
+stdout = """
+"""

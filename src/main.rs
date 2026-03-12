@@ -63,6 +63,14 @@ enum Command {
         /// SQL boolean expression (e.g. "age > 30 AND name LIKE 'A%'")
         clause: String,
     },
+
+    /// Limit the number of rows from Arrow input
+    ///
+    /// The count is interpolated into SELECT * FROM stdin LIMIT <count>.
+    Limit {
+        /// Maximum number of rows to return
+        count: String,
+    },
 }
 
 fn main() {
@@ -81,6 +89,7 @@ fn run() -> Result<()> {
         Command::To { format, expr } => cmd::to(&conn, &Format::parse(format, expr)),
         Command::Select { columns } => cmd::select(&conn, &columns),
         Command::Where { clause } => cmd::where_clause(&conn, &clause),
+        Command::Limit { count } => cmd::limit(&conn, &count),
     }
 }
 
