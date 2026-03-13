@@ -71,6 +71,14 @@ enum Command {
         /// Maximum number of rows to return
         count: String,
     },
+
+    /// Order rows from Arrow input using a SQL ORDER BY expression
+    ///
+    /// The expression is interpolated into SELECT * FROM stdin ORDER BY <clause>.
+    OrderBy {
+        /// SQL ORDER BY expression (e.g. "age DESC, name ASC")
+        clause: String,
+    },
 }
 
 fn main() {
@@ -90,6 +98,7 @@ fn run() -> Result<()> {
         Command::Select { columns } => cmd::select(&conn, &columns),
         Command::Where { clause } => cmd::where_clause(&conn, &clause),
         Command::Limit { count } => cmd::limit(&conn, &count),
+        Command::OrderBy { clause } => cmd::order_by(&conn, &clause),
     }
 }
 

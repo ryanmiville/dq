@@ -1,0 +1,37 @@
+cmd = "{dq} from jsonl | {dq} order-by \"age DESC, name ASC\" | {dq} to jsonl"
+
+[[cases]]
+name = "sorts_multiple_rows"
+input = """
+{"name":"Ada","age":37}
+{"name":"Linus","age":54}
+{"name":"Grace","age":40}
+{"name":"Alan","age":40}
+"""
+[cases.expect]
+kind = "exact"
+stdout = """
+{"name":"Linus","age":54}
+{"name":"Alan","age":40}
+{"name":"Grace","age":40}
+{"name":"Ada","age":37}
+"""
+
+[[cases]]
+name = "single_row"
+input = """
+{"name":"Ada","age":37}
+"""
+[cases.expect]
+kind = "exact"
+stdout = """
+{"name":"Ada","age":37}
+"""
+
+[[cases]]
+name = "empty"
+input = ""
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "IO Error"

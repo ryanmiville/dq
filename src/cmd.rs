@@ -33,6 +33,11 @@ pub fn limit(conn: &Connection, count: &str) -> Result<()> {
     emit_relation_query(conn, &query).context("failed to limit rows")
 }
 
+pub fn order_by(conn: &Connection, clause: &str) -> Result<()> {
+    let query = format!("SELECT * FROM read_arrow('/dev/stdin') ORDER BY {clause}");
+    emit_relation_query(conn, &query).context("failed to order rows")
+}
+
 fn emit_relation_query(conn: &Connection, query: &str) -> Result<()> {
     match output_mode() {
         OutputMode::Arrow => emit_arrow_query(conn, query),
