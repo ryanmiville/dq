@@ -69,7 +69,13 @@ impl DuckBox {
         let footer = build_footer(&selection, rows.len(), columns.len(), layout.hidden_columns);
         let style = RenderStyle::new(self.config.color);
 
-        Ok(render_table(&layout, &selection, footer.as_ref(), &style))
+        Ok(render_table(
+            &layout,
+            &selection,
+            footer.as_ref(),
+            &self.config.null_value,
+            &style,
+        ))
     }
 }
 
@@ -580,6 +586,7 @@ fn render_table(
     layout: &LayoutPlan,
     selection: &RowSelection,
     footer: Option<&Footer>,
+    null_value: &str,
     style: &RenderStyle,
 ) -> String {
     let widths: Vec<_> = layout.columns.iter().map(|column| column.width).collect();
@@ -604,7 +611,12 @@ fn render_table(
     for row in &selection.rows {
         match row {
             VisibleRow::Data(values) => {
-                lines.push(render_data_row(&layout.columns, values, style));
+                lines.push(render_data_row(
+                    &layout.columns,
+                    values,
+                    null_value,
+                    style,
+                ));
                 last_data_row = Some(values);
             }
             VisibleRow::Divider => {
@@ -645,18 +657,24 @@ fn render_column_row(
     line
 }
 
-fn render_data_row(columns: &[LayoutColumn], values: &[String], style: &RenderStyle) -> String {
+fn render_data_row(
+    columns: &[LayoutColumn],
+    values: &[String],
+    null_value: &str,
+    style: &RenderStyle,
+) -> String {
     let mut line = style.border_text("│");
     for column in columns {
         let value = column
             .source_index
             .map(|index| values[index].as_str())
             .unwrap_or("…");
+        let muted = column.source_index.is_none() || value == null_value;
         line.push_str(&render_text_styled(
             value,
             column.width,
             column.alignment,
-            column.source_index.is_none(),
+            muted,
             style,
         ));
         line.push_str(&style.border_text("│"));
@@ -1377,6 +1395,7 @@ mod tests {
                 },
             ],
             &["ok".to_string()],
+            "NULL",
             &RenderStyle::new(true),
         );
 
@@ -1387,6 +1406,39 @@ mod tests {
 
         assert!(actual.contains(&muted), "{actual:?}");
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn colorized_null_values_use_muted_styling() {
+        let actual = render_data_row(
+            &[
+                LayoutColumn {
+                    source_index: Some(0),
+                    name: "name".to_string(),
+                    type_name: "varchar".to_string(),
+                    alignment: Alignment::Left,
+                    width: 4,
+                },
+                LayoutColumn {
+                    source_index: Some(1),
+                    name: "age".to_string(),
+                    type_name: "bigint".to_string(),
+                    alignment: Alignment::Right,
+                    width: 4,
+                },
+            ],
+            &["NULL".to_string(), "42".to_string()],
+            "NULL",
+            &RenderStyle::new(true),
+        );
+
+        let border = GRAY;
+        let reset = "\u{1b}[0m";
+        let muted = format!("{border}NULL{reset}");
+
+        assert!(actual.contains(&muted), "{actual:?}");
+        assert!(actual.contains("   42 "), "{actual:?}");
+        assert_eq!(actual, format!("{border}│{reset} {muted} {border}│{reset}   42 {border}│{reset}"));
     }
 
     #[test]
@@ -1438,6 +1490,7 @@ mod tests {
             render_data_row(
                 &layout.columns,
                 &["1".to_string(), "2".to_string(), "3".to_string()],
+                "NULL",
                 &style,
             ),
             "│ 1 │ … │ 3 │"
