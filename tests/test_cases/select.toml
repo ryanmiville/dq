@@ -1,4 +1,4 @@
-cmd = "{dq} from jsonl | {dq} select \"name\" | {dq} to jsonl"
+cmd = "{dq} from json | {dq} select \"name\" | {dq} to json"
 
 [[cases]]
 name = "single_row"

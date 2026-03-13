@@ -1,9 +1,11 @@
-cmd = "{dq} from jsonl | {dq} to jsonl"
+cmd = "{dq} from json | {dq} to json-array"
 
 [[cases]]
 name = "single_row"
 input = """
-{"name":"Ada","age":37}
+[
+        {"name":"Ada","age":37}
+]
 """
 [cases.expect]
 kind = "same"
@@ -11,8 +13,10 @@ kind = "same"
 [[cases]]
 name = "two_rows"
 input = """
-{"name":"Ada","age":37}
-{"name":"Linus","age":54}
+[
+    {"name":"Ada","age":37},
+    {"name":"Linus","age":54}
+]
 """
 [cases.expect]
 kind = "same"
@@ -20,7 +24,9 @@ kind = "same"
 [[cases]]
 name = "complex_types"
 input = """
-{"a":1,"b":[1,2],"c":{"x":true},"d":null,"e":"hi"}
+[
+    {"a":1,"b":[1,2],"c":{"x":true},"d":null,"e":"hi"}
+]
 """
 [cases.expect]
 kind = "same"
@@ -28,8 +34,10 @@ kind = "same"
 [[cases]]
 name = "multiple_scalar"
 input = """
-{"id":1,"score":1.25,"active":false}
-{"id":2,"score":0.0,"active":true}
+[
+    {"id":1,"score":1.25,"active":false},
+    {"id":2,"score":0.0,"active":true}
+]
 """
 [cases.expect]
 kind = "same"
@@ -38,7 +46,12 @@ kind = "same"
 name = "empty"
 input = ""
 [cases.expect]
-kind = "same"
+kind = "exact"
+stdout = """
+[
+
+]
+"""
 
 [[cases]]
 name = "invalid_input"

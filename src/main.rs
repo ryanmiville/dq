@@ -22,7 +22,7 @@ struct Cli {
 enum Command {
     /// Read data from stdin or a file and output Arrow
     ///
-    /// Presets: csv, json, jsonl. Any other path is treated as a file source.
+    /// Presets: csv, json, json-array. Any other path is treated as a file source.
     /// Use --expr for raw DuckDB read expressions.
     From {
         /// Input format preset or input file path
@@ -36,7 +36,7 @@ enum Command {
 
     /// Read Arrow from stdin and write to stdout in the given format
     ///
-    /// Presets: csv, json, jsonl, pretty. Any other path is treated as a file
+    /// Presets: csv, json, json-array, pretty. Any other path is treated as a file
     /// destination. Use --expr for raw DuckDB COPY expressions.
     To {
         /// Output format preset or output file path

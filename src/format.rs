@@ -6,7 +6,7 @@ use clap::ValueEnum;
 pub enum Preset {
     Csv,
     Json,
-    Jsonl,
+    JsonArray,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -36,9 +36,7 @@ impl Format {
     pub fn read_fn(&self) -> String {
         match self {
             Format::Preset(Preset::Json) => "read_json_auto('/dev/stdin')".to_string(),
-            Format::Preset(Preset::Jsonl) => {
-                "read_json_auto('/dev/stdin', format='newline_delimited')".to_string()
-            }
+            Format::Preset(Preset::JsonArray) => "read_json_auto('/dev/stdin')".to_string(),
             Format::Preset(Preset::Csv) => "read_csv('/dev/stdin')".to_string(),
             Format::Path(path) => sql_string_literal(path),
             Format::Passthrough(text) => text.clone(),
@@ -47,8 +45,10 @@ impl Format {
 
     pub fn copy_format(&self) -> String {
         match self {
-            Format::Preset(Preset::Json) => "'/dev/stdout' (FORMAT JSON, ARRAY true)".to_string(),
-            Format::Preset(Preset::Jsonl) => "'/dev/stdout' (FORMAT JSON, ARRAY false)".to_string(),
+            Format::Preset(Preset::Json) => "'/dev/stdout' (FORMAT JSON, ARRAY false)".to_string(),
+            Format::Preset(Preset::JsonArray) => {
+                "'/dev/stdout' (FORMAT JSON, ARRAY true)".to_string()
+            }
             Format::Preset(Preset::Csv) => {
                 "'/dev/stdout' (FORMAT csv, DELIMITER ',', HEADER)".to_string()
             }

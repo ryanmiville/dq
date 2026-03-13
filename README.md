@@ -6,10 +6,10 @@ It lets you compose commands like `from`, `where`, `select`, `order-by`, `descri
 
 ```bash
 echo '{"name":"Ada","age":37}' |
-  dq from jsonl |
+  dq from json |
   dq where "age >= 30" |
   dq select "name" |
-  dq to jsonl
+  dq to json
 ```
 
 ## What it is
@@ -43,13 +43,13 @@ Built with:
 
 - `csv`
 - `json`
-- `jsonl`
+- `json-array`
 
 `to` supports these presets:
 
 - `csv`
 - `json`
-- `jsonl`
+- `json-array`
 - `pretty`
 
 `from` and `to` also accept file paths directly, so you can point at files without wrapping them in SQL quotes.
@@ -91,19 +91,19 @@ Binary path:
 You can also run with Cargo during development:
 
 ```bash
-cargo run -- from jsonl
+cargo run -- from json
 ```
 
 ## Quick examples
 
-### JSONL filter + projection
+### JSON filter + projection
 
 ```bash
 printf '{"name":"Ada","age":37}\n{"name":"Linus","age":54}\n' |
-  dq from jsonl |
+  dq from json |
   dq where "age >= 40" |
   dq select "name" |
-  dq to jsonl
+  dq to json
 ```
 
 ### CSV round-trip
@@ -135,7 +135,7 @@ printf '[{"name":"Ada","age":37},{"name":"Linus","age":54}]\n' |
 ```bash
 dq from ../data/input.json |
   dq where "age >= 40" |
-  dq to ../data/filtered.jsonl
+  dq to ../data/filtered.json
 ```
 
 ### Terminal auto-display
@@ -144,7 +144,7 @@ When `dq from`, `dq select`, or `dq where` write directly to a terminal, they di
 
 ```bash
 printf '{"name":"Ada","age":37}\n{"name":"Linus","age":54}\n' |
-  dq from jsonl |
+  dq from json |
   dq where "age >= 40"
 ```
 

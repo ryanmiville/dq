@@ -1,4 +1,4 @@
-cmd = "{dq} from jsonl | {dq} where \"age >= 40\" | {dq} to jsonl"
+cmd = "{dq} from json | {dq} where \"age >= 40\" | {dq} to json"
 
 [[cases]]
 name = "filters_matching_rows"

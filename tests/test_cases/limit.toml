@@ -1,4 +1,4 @@
-cmd = "{dq} from jsonl | {dq} limit 2 | {dq} to jsonl"
+cmd = "{dq} from json | {dq} limit 2 | {dq} to json"
 
 [[cases]]
 name = "limits_rows"

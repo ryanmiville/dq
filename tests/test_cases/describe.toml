@@ -1,4 +1,4 @@
-cmd = "{dq} from jsonl | {dq} describe | {dq} to jsonl"
+cmd = "{dq} from json | {dq} describe | {dq} to json"
 
 [[cases]]
 name = "describes_input_schema"

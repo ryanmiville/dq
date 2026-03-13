@@ -15,7 +15,7 @@ dq/
 ├── src/
 │   ├── main.rs         # CLI entry, clap parsing, DuckDB connection setup
 │   ├── cmd.rs          # Subcommand implementations (from/to/select/where)
-│   └── format.rs       # Format enum: presets (csv/json/jsonl) + raw passthrough
+│   └── format.rs       # Format enum: presets (csv/json/json-array) + raw passthrough
 ├── dq_test_macros/     # Proc-macro crate: generates #[test] fns from TOML fixtures
 ├── dq_test_fixtures/   # Fixture schema (Suite/Case/Expect) + TOML parsing/validation
 └── tests/
@@ -59,7 +59,7 @@ dq/
 ```bash
 cargo build --release     # Build binary → target/release/dq
 cargo test                # Run all tests (compiles fixtures → test fns)
-cargo run -- from jsonl   # Dev-run a single stage
+cargo run -- from json   # Dev-run a single stage
 ```
 
 ## NOTES

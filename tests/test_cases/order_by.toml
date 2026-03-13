@@ -1,4 +1,4 @@
-cmd = "{dq} from jsonl | {dq} order-by \"age DESC, name ASC\" | {dq} to jsonl"
+cmd = "{dq} from json | {dq} order-by \"age DESC, name ASC\" | {dq} to json"
 
 [[cases]]
 name = "sorts_multiple_rows"

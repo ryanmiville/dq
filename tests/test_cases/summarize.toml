@@ -1,4 +1,4 @@
-cmd = "{dq} from jsonl | {dq} summarize | {dq} to jsonl"
+cmd = "{dq} from json | {dq} summarize | {dq} to json"
 
 [[cases]]
 name = "summarizes_input_columns"

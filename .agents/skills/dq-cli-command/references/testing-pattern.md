@@ -7,7 +7,7 @@ Use TOML fixtures in `tests/test_cases/`. Do not add bespoke in-process tests fo
 Start from `tests/test_cases/select.toml` or `tests/test_cases/where_clause.toml`.
 
 ```toml
-cmd = "{dq} from jsonl | {dq} <command> \"...\" | {dq} to jsonl"
+cmd = "{dq} from json | {dq} <command> \"...\" | {dq} to json"
 
 [[cases]]
 name = "example"
