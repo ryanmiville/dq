@@ -69,13 +69,7 @@ impl DuckBox {
         let footer = build_footer(&selection, rows.len(), columns.len(), layout.hidden_columns);
         let style = RenderStyle::new(self.config.color);
 
-        Ok(render_table(
-            &layout,
-            &selection,
-            footer.as_ref(),
-            &self.config.null_value,
-            &style,
-        ))
+        Ok(render_table(&layout, &selection, footer.as_ref(), &style))
     }
 }
 
@@ -140,8 +134,14 @@ struct RowSelection {
 }
 
 #[derive(Clone, Debug)]
+struct CellValue {
+    text: String,
+    is_null: bool,
+}
+
+#[derive(Clone, Debug)]
 enum VisibleRow {
-    Data(Vec<String>),
+    Data(Vec<CellValue>),
     Divider,
 }
 
@@ -192,7 +192,7 @@ fn extract_columns(batch: &RecordBatch) -> Vec<ColumnMeta> {
         .collect()
 }
 
-fn extract_rows(batches: &[RecordBatch], null_value: &str) -> Result<Vec<Vec<String>>> {
+fn extract_rows(batches: &[RecordBatch], null_value: &str) -> Result<Vec<Vec<CellValue>>> {
     let mut rows = Vec::new();
 
     for batch in batches {
@@ -200,12 +200,16 @@ fn extract_rows(batches: &[RecordBatch], null_value: &str) -> Result<Vec<Vec<Str
             let mut row = Vec::with_capacity(batch.num_columns());
             for column in batch.columns() {
                 if column.is_null(row_index) {
-                    row.push(null_value.to_string());
+                    row.push(CellValue {
+                        text: null_value.to_string(),
+                        is_null: true,
+                    });
                 } else {
-                    row.push(
-                        array_value_to_string(column.as_ref(), row_index)
+                    row.push(CellValue {
+                        text: array_value_to_string(column.as_ref(), row_index)
                             .context("failed to stringify arrow value")?,
-                    );
+                        is_null: false,
+                    });
                 }
             }
             rows.push(row);
@@ -215,7 +219,7 @@ fn extract_rows(batches: &[RecordBatch], null_value: &str) -> Result<Vec<Vec<Str
     Ok(rows)
 }
 
-fn select_rows(rows: &[Vec<String>], max_rows: usize) -> RowSelection {
+fn select_rows(rows: &[Vec<CellValue>], max_rows: usize) -> RowSelection {
     if max_rows == 0 || rows.len() <= max_rows.saturating_add(3) || rows.len() <= max_rows {
         return RowSelection {
             rows: rows.iter().cloned().map(VisibleRow::Data).collect(),
@@ -256,7 +260,7 @@ fn compute_natural_widths(columns: &[ColumnMeta], selection: &RowSelection) -> V
             for row in &selection.rows {
                 match row {
                     VisibleRow::Data(values) => {
-                        width = width.max(display_width(&values[index]));
+                        width = width.max(display_width(&values[index].text));
                     }
                     VisibleRow::Divider => {
                         width = width.max(1);
@@ -586,7 +590,6 @@ fn render_table(
     layout: &LayoutPlan,
     selection: &RowSelection,
     footer: Option<&Footer>,
-    null_value: &str,
     style: &RenderStyle,
 ) -> String {
     let widths: Vec<_> = layout.columns.iter().map(|column| column.width).collect();
@@ -607,16 +610,11 @@ fn render_table(
     ));
     lines.push(render_segmented_border(&widths, '├', '┼', '┤', style));
 
-    let mut last_data_row: Option<&[String]> = None;
+    let mut last_data_row: Option<&[CellValue]> = None;
     for row in &selection.rows {
         match row {
             VisibleRow::Data(values) => {
-                lines.push(render_data_row(
-                    &layout.columns,
-                    values,
-                    null_value,
-                    style,
-                ));
+                lines.push(render_data_row(&layout.columns, values, style));
                 last_data_row = Some(values);
             }
             VisibleRow::Divider => {
@@ -657,19 +655,12 @@ fn render_column_row(
     line
 }
 
-fn render_data_row(
-    columns: &[LayoutColumn],
-    values: &[String],
-    null_value: &str,
-    style: &RenderStyle,
-) -> String {
+fn render_data_row(columns: &[LayoutColumn], values: &[CellValue], style: &RenderStyle) -> String {
     let mut line = style.border_text("│");
     for column in columns {
-        let value = column
-            .source_index
-            .map(|index| values[index].as_str())
-            .unwrap_or("…");
-        let muted = column.source_index.is_none() || value == null_value;
+        let cell = column.source_index.and_then(|index| values.get(index));
+        let value = cell.map(|cell| cell.text.as_str()).unwrap_or("…");
+        let muted = column.source_index.is_none() || cell.is_some_and(|cell| cell.is_null);
         line.push_str(&render_text_styled(
             value,
             column.width,
@@ -684,7 +675,7 @@ fn render_data_row(
 
 fn render_divider_row(
     columns: &[LayoutColumn],
-    reference_values: Option<&[String]>,
+    reference_values: Option<&[CellValue]>,
     style: &RenderStyle,
 ) -> String {
     let mut line = style.border_text("│");
@@ -692,7 +683,7 @@ fn render_divider_row(
         let reference_value = column
             .source_index
             .and_then(|index| reference_values.and_then(|values| values.get(index)))
-            .map(|value| truncate_to_width(value, column.width));
+            .map(|value| truncate_to_width(&value.text, column.width));
         line.push_str(&render_divider_text(
             column.width,
             column.alignment,
@@ -1038,6 +1029,20 @@ mod tests {
         RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap()
     }
 
+    fn cell(text: &str) -> CellValue {
+        CellValue {
+            text: text.to_string(),
+            is_null: false,
+        }
+    }
+
+    fn null_cell(text: &str) -> CellValue {
+        CellValue {
+            text: text.to_string(),
+            is_null: true,
+        }
+    }
+
     #[test]
     fn basic_render() {
         let batch = batch(
@@ -1217,7 +1222,7 @@ mod tests {
                     width: 3,
                 },
             ],
-            Some(&["Sales".to_string(), "10".to_string(), "true".to_string()]),
+            Some(&[cell("Sales"), cell("10"), cell("true")]),
             &RenderStyle::new(false),
         );
 
@@ -1359,7 +1364,7 @@ mod tests {
                     width: 6,
                 },
             ],
-            Some(&["Sales".to_string(), "10".to_string()]),
+            Some(&[cell("Sales"), cell("10")]),
             &RenderStyle::new(true),
         );
 
@@ -1394,8 +1399,7 @@ mod tests {
                     width: 1,
                 },
             ],
-            &["ok".to_string()],
-            "NULL",
+            &[cell("ok")],
             &RenderStyle::new(true),
         );
 
@@ -1427,8 +1431,7 @@ mod tests {
                     width: 4,
                 },
             ],
-            &["NULL".to_string(), "42".to_string()],
-            "NULL",
+            &[null_cell("NULL"), cell("42")],
             &RenderStyle::new(true),
         );
 
@@ -1439,6 +1442,39 @@ mod tests {
         assert!(actual.contains(&muted), "{actual:?}");
         assert!(actual.contains("   42 "), "{actual:?}");
         assert_eq!(actual, format!("{border}│{reset} {muted} {border}│{reset}   42 {border}│{reset}"));
+    }
+
+    #[test]
+    fn literal_null_text_is_not_muted_when_value_is_not_null() {
+        let actual = render_data_row(
+            &[
+                LayoutColumn {
+                    source_index: Some(0),
+                    name: "name".to_string(),
+                    type_name: "varchar".to_string(),
+                    alignment: Alignment::Left,
+                    width: 4,
+                },
+                LayoutColumn {
+                    source_index: Some(1),
+                    name: "status".to_string(),
+                    type_name: "varchar".to_string(),
+                    alignment: Alignment::Left,
+                    width: 4,
+                },
+            ],
+            &[cell("NULL"), null_cell("NULL")],
+            &RenderStyle::new(true),
+        );
+
+        let border = GRAY;
+        let reset = "\u{1b}[0m";
+        let muted = format!("{border}NULL{reset}");
+        let plain = " NULL ";
+
+        assert_eq!(actual.matches(&muted).count(), 1, "{actual:?}");
+        assert!(actual.contains(plain), "{actual:?}");
+        assert_eq!(actual, format!("{border}│{reset}{plain}{border}│{reset} {muted} {border}│{reset}"));
     }
 
     #[test]
@@ -1487,12 +1523,7 @@ mod tests {
             "│ x │   │ z │"
         );
         assert_eq!(
-            render_data_row(
-                &layout.columns,
-                &["1".to_string(), "2".to_string(), "3".to_string()],
-                "NULL",
-                &style,
-            ),
+            render_data_row(&layout.columns, &[cell("1"), cell("2"), cell("3")], &style),
             "│ 1 │ … │ 3 │"
         );
     }
