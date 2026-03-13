@@ -79,6 +79,11 @@ enum Command {
         /// SQL ORDER BY expression (e.g. "age DESC, name ASC")
         clause: String,
     },
+
+    /// Describe the schema of Arrow input
+    ///
+    /// Internally runs DESCRIBE SELECT * FROM stdin.
+    Describe,
 }
 
 fn main() {
@@ -99,6 +104,7 @@ fn run() -> Result<()> {
         Command::Where { clause } => cmd::where_clause(&conn, &clause),
         Command::Limit { count } => cmd::limit(&conn, &count),
         Command::OrderBy { clause } => cmd::order_by(&conn, &clause),
+        Command::Describe => cmd::describe(&conn),
     }
 }
 

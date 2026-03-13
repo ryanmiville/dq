@@ -1,0 +1,23 @@
+cmd = "{dq} from jsonl | {dq} describe | {dq} to jsonl"
+
+[[cases]]
+name = "describes_input_schema"
+input = """
+{"name":"Ada","age":37,"active":true}
+"""
+[cases.expect]
+kind = "exact"
+stdout = """
+{"column_name":"name","column_type":"VARCHAR","null":"YES","key":null,"default":null,"extra":null}
+{"column_name":"age","column_type":"BIGINT","null":"YES","key":null,"default":null,"extra":null}
+{"column_name":"active","column_type":"BOOLEAN","null":"YES","key":null,"default":null,"extra":null}
+"""
+
+[[cases]]
+name = "empty"
+input = ""
+[cases.expect]
+kind = "exact"
+stdout = """
+{"column_name":"json","column_type":"VARCHAR","null":"YES","key":null,"default":null,"extra":null}
+"""

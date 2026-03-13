@@ -2,7 +2,7 @@
 
 `dq` is a small CLI for data pipelines powered by DuckDB.
 
-It lets you compose commands like `from`, `where`, `select`, and `to` in Unix pipes:
+It lets you compose commands like `from`, `where`, `select`, `order-by`, `describe`, and `to` in Unix pipes:
 
 ```bash
 echo '{"name":"Ada","age":37}' |
@@ -17,7 +17,8 @@ echo '{"name":"Ada","age":37}' |
 `dq` is designed for lightweight, shell-first querying and format conversion.
 
 - Parse input into a queryable table (`from`)
-- Apply SQL-style transforms (`where`, `select`)
+- Apply SQL-style transforms (`where`, `select`, `order-by`)
+- Inspect inferred schemas (`describe`)
 - Emit output in a target format (`to`)
 
 Built with:
@@ -30,6 +31,9 @@ Built with:
 - `dq to <format-or-path>`
 - `dq select <columns>`
 - `dq where <clause>`
+- `dq limit <count>`
+- `dq order-by <clause>`
+- `dq describe`
 
 ### Preset formats
 

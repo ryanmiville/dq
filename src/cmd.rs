@@ -38,6 +38,14 @@ pub fn order_by(conn: &Connection, clause: &str) -> Result<()> {
     emit_relation_query(conn, &query).context("failed to order rows")
 }
 
+pub fn describe(conn: &Connection) -> Result<()> {
+    conn.execute_batch("CREATE TEMP TABLE dq_input AS SELECT * FROM read_arrow('/dev/stdin');")
+        .context("failed to describe input")?;
+
+    let query = "SELECT * FROM (DESCRIBE dq_input)";
+    emit_relation_query(conn, query).context("failed to describe input")
+}
+
 fn emit_relation_query(conn: &Connection, query: &str) -> Result<()> {
     match output_mode() {
         OutputMode::Arrow => emit_arrow_query(conn, query),
