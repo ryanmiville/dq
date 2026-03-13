@@ -1,0 +1,24 @@
+cmd = "{dq} from jsonl | {dq} summarize | {dq} to jsonl"
+
+[[cases]]
+name = "summarizes_input_columns"
+input = """
+{"name":"Ada","age":37,"active":true}
+{"name":"Linus","age":54,"active":false}
+"""
+[cases.expect]
+kind = "exact"
+stdout = """
+{"column_name":"name","column_type":"VARCHAR","min":"Ada","max":"Linus","approx_unique":2,"avg":null,"std":null,"q25":null,"q50":null,"q75":null,"count":2,"null_percentage":0.0}
+{"column_name":"age","column_type":"BIGINT","min":"37","max":"54","approx_unique":2,"avg":"45.5","std":"12.020815280171307","q25":"37","q50":"46","q75":"54","count":2,"null_percentage":0.0}
+{"column_name":"active","column_type":"BOOLEAN","min":"false","max":"true","approx_unique":2,"avg":null,"std":null,"q25":null,"q50":null,"q75":null,"count":2,"null_percentage":0.0}
+"""
+
+[[cases]]
+name = "empty"
+input = ""
+[cases.expect]
+kind = "exact"
+stdout = """
+{"column_name":"json","column_type":"VARCHAR","min":null,"max":null,"approx_unique":0,"avg":null,"std":null,"q25":null,"q50":null,"q75":null,"count":0,"null_percentage":null}
+"""

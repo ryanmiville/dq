@@ -46,6 +46,14 @@ pub fn describe(conn: &Connection) -> Result<()> {
     emit_relation_query(conn, query).context("failed to describe input")
 }
 
+pub fn summarize(conn: &Connection) -> Result<()> {
+    conn.execute_batch("CREATE TEMP TABLE dq_input AS SELECT * FROM read_arrow('/dev/stdin');")
+        .context("failed to summarize input")?;
+
+    let query = "SELECT * FROM (SUMMARIZE dq_input)";
+    emit_relation_query(conn, query).context("failed to summarize input")
+}
+
 fn emit_relation_query(conn: &Connection, query: &str) -> Result<()> {
     match output_mode() {
         OutputMode::Arrow => emit_arrow_query(conn, query),

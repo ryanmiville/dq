@@ -84,6 +84,11 @@ enum Command {
     ///
     /// Internally runs DESCRIBE SELECT * FROM stdin.
     Describe,
+
+    /// Summarize Arrow input with column statistics
+    ///
+    /// Internally runs SUMMARIZE SELECT * FROM stdin.
+    Summarize,
 }
 
 fn main() {
@@ -105,6 +110,7 @@ fn run() -> Result<()> {
         Command::Limit { count } => cmd::limit(&conn, &count),
         Command::OrderBy { clause } => cmd::order_by(&conn, &clause),
         Command::Describe => cmd::describe(&conn),
+        Command::Summarize => cmd::summarize(&conn),
     }
 }
 
