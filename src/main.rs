@@ -116,7 +116,22 @@ fn run() -> Result<()> {
 
 fn open_connection() -> Result<Connection> {
     let conn = Connection::open_in_memory().context("failed to open duckdb")?;
-    conn.execute_batch("INSTALL arrow FROM community; LOAD arrow;")
-        .context("failed to install and load duckdb arrow extension")?;
+    install_arrow(&conn)?;
     Ok(conn)
+}
+
+/// Install and load the Arrow community extension, retrying on transient
+/// failures caused by concurrent processes writing the same extension file.
+fn install_arrow(conn: &Connection) -> Result<()> {
+    let mut last_err = None;
+    for i in 0..3 {
+        if i > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(100 * i));
+        }
+        match conn.execute_batch("INSTALL arrow FROM community; LOAD arrow;") {
+            Ok(()) => return Ok(()),
+            Err(e) => last_err = Some(e),
+        }
+    }
+    Err(last_err.unwrap()).context("failed to install and load duckdb arrow extension")
 }
