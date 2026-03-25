@@ -1441,7 +1441,10 @@ mod tests {
 
         assert!(actual.contains(&muted), "{actual:?}");
         assert!(actual.contains("   42 "), "{actual:?}");
-        assert_eq!(actual, format!("{border}│{reset} {muted} {border}│{reset}   42 {border}│{reset}"));
+        assert_eq!(
+            actual,
+            format!("{border}│{reset} {muted} {border}│{reset}   42 {border}│{reset}")
+        );
     }
 
     #[test]
@@ -1474,7 +1477,10 @@ mod tests {
 
         assert_eq!(actual.matches(&muted).count(), 1, "{actual:?}");
         assert!(actual.contains(plain), "{actual:?}");
-        assert_eq!(actual, format!("{border}│{reset}{plain}{border}│{reset} {muted} {border}│{reset}"));
+        assert_eq!(
+            actual,
+            format!("{border}│{reset}{plain}{border}│{reset} {muted} {border}│{reset}")
+        );
     }
 
     #[test]
