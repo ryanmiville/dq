@@ -29,7 +29,10 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run tests
-        run: cargo test
+        run: |
+          cargo build
+          echo 'a,b' | ./target/debug/dq from csv > /dev/null 2>&1
+          cargo test
 
   lint:
     name: Lint
