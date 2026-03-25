@@ -593,22 +593,22 @@ fn render_table(
     style: &RenderStyle,
 ) -> String {
     let widths: Vec<_> = layout.columns.iter().map(|column| column.width).collect();
-    let mut lines = Vec::new();
-
-    lines.push(render_segmented_border(&widths, '┌', '┬', '┐', style));
-    lines.push(render_column_row(
-        &layout.columns,
-        |column| column.name.as_str(),
-        Alignment::Center,
-        style,
-    ));
-    lines.push(render_column_row(
-        &layout.columns,
-        |column| column.type_name.as_str(),
-        Alignment::Center,
-        style,
-    ));
-    lines.push(render_segmented_border(&widths, '├', '┼', '┤', style));
+    let mut lines = vec![
+        render_segmented_border(&widths, '┌', '┬', '┐', style),
+        render_column_row(
+            &layout.columns,
+            |column| column.name.as_str(),
+            Alignment::Center,
+            style,
+        ),
+        render_column_row(
+            &layout.columns,
+            |column| column.type_name.as_str(),
+            Alignment::Center,
+            style,
+        ),
+        render_segmented_border(&widths, '├', '┼', '┤', style),
+    ];
 
     let mut last_data_row: Option<&[CellValue]> = None;
     for row in &selection.rows {

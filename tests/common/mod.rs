@@ -34,7 +34,7 @@ pub fn run_suite_fixture(fixture_rel_path: &str) {
     let command = suite.cmd.replace("{dq}", dq());
 
     for case in &suite.cases {
-        run_suite_case(&command, &fixture_path, &case);
+        run_suite_case(&command, &fixture_path, case);
     }
 }
 
