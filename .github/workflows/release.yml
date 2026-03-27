@@ -130,6 +130,9 @@ jobs:
         run: cross build --release --target ${{ matrix.target }}
         env:
           RUSTFLAGS: "-C strip=symbols"
+          # Work around GCC ICE in cross's Docker image when compiling
+          # libduckdb-sys at -O3 (internal compiler error in expand_shift_1)
+          CXXFLAGS_aarch64_unknown_linux_gnu: "-O2"
 
       - name: Build (native)
         if: "!matrix.cross"
