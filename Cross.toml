@@ -1,0 +1,4 @@
+[target.aarch64-unknown-linux-gnu.env]
+# Work around GCC ICE compiling libduckdb-sys at -O3
+# (internal compiler error in expand_shift_1, at expmed.c:2349)
+passthrough = ["CXXFLAGS"]
