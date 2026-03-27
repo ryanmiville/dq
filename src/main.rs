@@ -36,7 +36,7 @@ enum Command {
 
     /// Read Arrow from stdin and write to stdout in the given format
     ///
-    /// Presets: csv, json, json-array, pretty. Any other path is treated as a file
+    /// Presets: csv, json, json-array. Any other path is treated as a file
     /// destination. Use --expr for raw DuckDB COPY expressions.
     To {
         /// Output format preset or output file path

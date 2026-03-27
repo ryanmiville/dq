@@ -1,30 +1,42 @@
 # dq
 
-`dq` is a small CLI for data pipelines powered by DuckDB.
+Shell-first data pipelines powered by DuckDB.
 
-It lets you compose commands like `from`, `where`, `select`, `order-by`, `describe`, `summarize`, and `to` in Unix pipes:
+Compose `from`, `select`, `where`, `order-by`, `limit`, `describe`, `summarize`, and `to` in Unix pipes. Stages exchange Arrow over stdin/stdout.
 
 ```bash
-echo '{"name":"Ada","age":37}' |
+printf '{"name":"Ada","age":37}\n{"name":"Linus","age":54}\n' |
   dq from json |
-  dq where "age >= 30" |
+  dq where "age >= 40" |
   dq select "name" |
   dq to json
+# {"name":"Linus"}
 ```
 
-## What it is
+When stdout is a terminal, stages auto-display a pretty table instead of emitting Arrow:
 
-`dq` is designed for lightweight, shell-first querying and format conversion.
+```
+$ printf '{"name":"Ada","age":37}\n{"name":"Linus","age":54}\n' | dq from json
+┌─────────┬────────┐
+│  name   │  age   │
+│ varchar │ bigint │
+├─────────┼────────┤
+│ Ada     │     37 │
+│ Linus   │     54 │
+└─────────┴────────┘
+```
 
-- Parse input into a queryable table (`from`)
-- Apply SQL-style transforms (`where`, `select`, `order-by`)
-- Inspect inferred schemas (`describe`)
-- Compute per-column summary statistics (`summarize`)
-- Emit output in a target format (`to`)
+## Install
 
-Built with:
-- [DuckDB](https://duckdb.org/) for execution
-- [clap](https://github.com/clap-rs/clap) for CLI parsing
+```bash
+brew install ryanmiville/tap/dq
+```
+
+Or build from source (requires Rust stable):
+
+```bash
+cargo build --release
+```
 
 ## Current command set
 
@@ -39,64 +51,17 @@ Built with:
 
 ### Preset formats
 
-`from` supports these presets:
+`from` and `to` support these presets:
 
 - `csv`
 - `json`
 - `json-array`
-
-`to` supports these presets:
-
-- `csv`
-- `json`
-- `json-array`
-- `pretty`
 
 `from` and `to` also accept file paths directly, so you can point at files without wrapping them in SQL quotes.
 
-Examples:
+## Examples
 
-```bash
-# read a file directly
-dq from ../testdata.json
-
-# write a file directly
-dq to ../out/result.csv
-
-# raw DuckDB read expression
-dq from --expr "read_csv('/dev/stdin')"
-
-# raw DuckDB COPY options
-dq to --expr "(FORMAT CSV, DELIMITER '|', HEADER)"
-```
-
-## Install / run
-
-### Prerequisites
-
-- Rust toolchain (stable)
-
-### Build
-
-```bash
-cargo build --release
-```
-
-Binary path:
-
-```bash
-./target/release/dq
-```
-
-You can also run with Cargo during development:
-
-```bash
-cargo run -- from json
-```
-
-## Quick examples
-
-### JSON filter + projection
+### Filter and project
 
 ```bash
 printf '{"name":"Ada","age":37}\n{"name":"Linus","age":54}\n' |
@@ -106,58 +71,167 @@ printf '{"name":"Ada","age":37}\n{"name":"Linus","age":54}\n' |
   dq to json
 ```
 
-### CSV round-trip
-
-```bash
-printf 'name,age\nAda,37\nLinus,54\n' |
-  dq from csv |
-  dq to csv
+```
+{"name":"Linus"}
 ```
 
-### JSON array round-trip
-
-```bash
-printf '[{"name":"Ada","age":37}]\n' |
-  dq from json |
-  dq to json
-```
-
-### Pretty table output
-
-```bash
-printf '[{"name":"Ada","age":37},{"name":"Linus","age":54}]\n' |
-  dq from json |
-  dq to pretty
-```
-
-### File-to-file conversion
-
-```bash
-dq from ../data/input.json |
-  dq where "age >= 40" |
-  dq to ../data/filtered.json
-```
-
-### Terminal auto-display
-
-When `dq from`, `dq select`, or `dq where` write directly to a terminal, they display a pretty table automatically. When their output is piped, they continue emitting Arrow for the next `dq` stage.
+### Select with expressions
 
 ```bash
 printf '{"name":"Ada","age":37}\n{"name":"Linus","age":54}\n' |
   dq from json |
-  dq where "age >= 40"
+  dq select "name, age * 2 AS double_age" |
+  dq to json
 ```
 
-## Development
+```
+{"name":"Ada","double_age":74}
+{"name":"Linus","double_age":108}
+```
 
-Run tests:
+### Order by
 
 ```bash
-cargo test
+printf '{"name":"Ada","age":37}\n{"name":"Linus","age":54}\n{"name":"Grace","age":85}\n' |
+  dq from json |
+  dq order-by "age DESC" |
+  dq to json
 ```
+
+```
+{"name":"Grace","age":85}
+{"name":"Linus","age":54}
+{"name":"Ada","age":37}
+```
+
+### Limit
+
+```bash
+printf '{"name":"Ada","age":37}\n{"name":"Linus","age":54}\n{"name":"Grace","age":85}\n' |
+  dq from json |
+  dq limit 1 |
+  dq to json
+```
+
+```
+{"name":"Ada","age":37}
+```
+
+### Format conversion
+
+```bash
+printf '{"name":"Ada","age":37}\n{"name":"Linus","age":54}\n' |
+  dq from json |
+  dq to csv
+```
+
+```
+name,age
+Ada,37
+Linus,54
+```
+
+```bash
+printf '{"name":"Ada","age":37}\n{"name":"Linus","age":54}\n' |
+  dq from json |
+  dq to json-array
+```
+
+```json
+[
+	{"name":"Ada","age":37},
+	{"name":"Linus","age":54}
+]
+```
+
+### Describe
+
+```bash
+printf '{"name":"Ada","age":37}\n{"name":"Linus","age":54}\n' |
+  dq from json |
+  dq describe
+```
+
+```
+┌─────────────┬─────────────┬─────────┬─────────┬─────────┬─────────┐
+│ column_name │ column_type │  null   │   key   │ default │  extra  │
+│   varchar   │   varchar   │ varchar │ varchar │ varchar │ varchar │
+├─────────────┼─────────────┼─────────┼─────────┼─────────┼─────────┤
+│ name        │ VARCHAR     │ YES     │ NULL    │ NULL    │ NULL    │
+│ age         │ BIGINT      │ YES     │ NULL    │ NULL    │ NULL    │
+└─────────────┴─────────────┴─────────┴─────────┴─────────┴─────────┘
+```
+
+### Summarize
+
+```bash
+printf '{"name":"Ada","age":37}\n{"name":"Linus","age":54}\n' |
+  dq from json |
+  dq summarize
+```
+
+```
+┌─────────────┬─────────────┬─────────┬─────────┬───────────────┬─────────┬────────────────────┬─────────┬─────────┬─────────┬────────┬─────────────────┐
+│ column_name │ column_type │   min   │   max   │ approx_unique │   avg   │        std         │   q25   │   q50   │   q75   │ count  │ null_percentage │
+│   varchar   │   varchar   │ varchar │ varchar │    bigint     │ varchar │      varchar       │ varchar │ varchar │ varchar │ bigint │  decimal(9,2)   │
+├─────────────┼─────────────┼─────────┼─────────┼───────────────┼─────────┼────────────────────┼─────────┼─────────┼─────────┼────────┼─────────────────┤
+│ name        │ VARCHAR     │ Ada     │ Linus   │             2 │ NULL    │ NULL               │ NULL    │ NULL    │ NULL    │      2 │            0.00 │
+│ age         │ BIGINT      │ 37      │ 54      │             2 │ 45.5    │ 12.020815280171307 │ 37      │ 46      │ 54      │      2 │            0.00 │
+└─────────────┴─────────────┴─────────┴─────────┴───────────────┴─────────┴────────────────────┴─────────┴─────────┴─────────┴────────┴─────────────────┘
+```
+
+### File I/O
+
+```bash
+# read from file
+dq from data/input.json | dq where "age >= 40" | dq to csv
+
+# write to file
+dq from data/input.json | dq to data/filtered.csv
+```
+
+### Raw DuckDB expressions
+
+Use `--expr` to pass arbitrary DuckDB read/copy expressions:
+
+```bash
+# custom read
+printf 'name,age\nAda,37\n' |
+  dq from --expr "read_csv('/dev/stdin', header=true)" |
+  dq to json
+```
+
+```
+{"name":"Ada","age":37}
+```
+
+```bash
+# custom write (pipe-delimited)
+printf 'name,age\nAda,37\n' |
+  dq from csv |
+  dq to --expr "'/dev/stdout' (FORMAT CSV, DELIMITER '|', HEADER)"
+```
+
+```
+name|age
+Ada|37
+```
+
+## Terminal auto-display
+
+When a stage's stdout is a terminal, it renders a pretty table instead of Arrow. When piped, it emits Arrow for the next stage. This means the last command in a pipeline automatically pretty-prints without needing `dq to`.
+
+### Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DQ_MAX_WIDTH` | terminal width | Max table width in columns |
+| `DQ_MAX_ROWS` | `20` | Max rows before truncation |
+| `DQ_MAX_COL_WIDTH` | `20` | Preferred max column width |
+| `NO_COLOR` | — | Disable ANSI color when set |
 
 ## Notes
 
-- Commands are intended to be composed in a pipeline.
-- `select` and `where` arguments are inserted into SQL expressions; keep inputs trusted.
-- Under the hood, pipeline stages exchange Arrow data for efficient chaining.
+- Pipeline stages exchange Arrow for efficient chaining.
+- `select`/`where` args are interpolated into SQL — keep inputs trusted.
+- DuckDB's `arrow` extension is loaded on each invocation.
