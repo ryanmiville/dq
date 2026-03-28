@@ -5,6 +5,7 @@ use duckdb::arrow::{
     util::display::array_value_to_string,
 };
 use std::{
+    collections::VecDeque,
     env,
     io::{self, IsTerminal},
 };
@@ -46,18 +47,46 @@ impl DuckBox {
         Self { config }
     }
 
+    pub fn render_streaming(
+        &self,
+        batches: impl IntoIterator<Item = RecordBatch>,
+    ) -> Result<String> {
+        let mut snapshot = StreamingSnapshot::new(self.config.max_rows, &self.config.null_value);
+        for batch in batches {
+            snapshot.push_batch(&batch)?;
+        }
+
+        let Some(selection) = snapshot.finish() else {
+            return Ok(String::new());
+        };
+
+        self.render_selection(selection.columns, selection.selection, selection.total_rows)
+    }
+
+    #[cfg(test)]
     pub fn render(&self, batches: &[RecordBatch]) -> Result<String> {
         if batches.is_empty() {
             return Ok(String::new());
         }
 
         let columns = extract_columns(&batches[0]);
+        let rows = extract_rows(batches, &self.config.null_value)?;
+        let total_rows = rows.len();
+        let selection = select_rows(&rows, self.config.max_rows);
+
+        self.render_selection(columns, selection, total_rows)
+    }
+
+    fn render_selection(
+        &self,
+        columns: Vec<ColumnMeta>,
+        selection: RowSelection,
+        total_rows: usize,
+    ) -> Result<String> {
         if columns.is_empty() {
             return Ok(String::new());
         }
 
-        let rows = extract_rows(batches, &self.config.null_value)?;
-        let selection = select_rows(&rows, self.config.max_rows);
         let natural_widths = compute_natural_widths(&columns, &selection);
         let max_width = resolved_max_width(self.config.max_width);
         let layout = fit_columns(
@@ -66,7 +95,7 @@ impl DuckBox {
             max_width,
             self.config.max_col_width.max(1),
         );
-        let footer = build_footer(&selection, rows.len(), columns.len(), layout.hidden_columns);
+        let footer = build_footer(&selection, total_rows, columns.len(), layout.hidden_columns);
         let style = RenderStyle::new(self.config.color);
 
         Ok(render_table(&layout, &selection, footer.as_ref(), &style))
@@ -133,6 +162,31 @@ struct RowSelection {
     truncated: bool,
 }
 
+#[derive(Debug)]
+struct StreamingSelection {
+    columns: Vec<ColumnMeta>,
+    selection: RowSelection,
+    total_rows: usize,
+}
+
+struct StreamingSnapshot<'a> {
+    max_rows: usize,
+    null_value: &'a str,
+    columns: Option<Vec<ColumnMeta>>,
+    total_rows: usize,
+    rows: StreamingRows,
+}
+
+enum StreamingRows {
+    Unlimited(Vec<Vec<CellValue>>),
+    Pending(Vec<Vec<CellValue>>),
+    Truncated {
+        top_rows: Vec<Vec<CellValue>>,
+        tail_rows: VecDeque<Vec<CellValue>>,
+        bottom_count: usize,
+    },
+}
+
 #[derive(Clone, Debug)]
 struct CellValue {
     text: String,
@@ -179,6 +233,120 @@ impl RenderStyle {
     }
 }
 
+impl<'a> StreamingSnapshot<'a> {
+    fn new(max_rows: usize, null_value: &'a str) -> Self {
+        Self {
+            max_rows,
+            null_value,
+            columns: None,
+            total_rows: 0,
+            rows: StreamingRows::new(max_rows),
+        }
+    }
+
+    fn push_batch(&mut self, batch: &RecordBatch) -> Result<()> {
+        if self.columns.is_none() {
+            self.columns = Some(extract_columns(batch));
+        }
+
+        for row_index in 0..batch.num_rows() {
+            let row = extract_row(batch, row_index, self.null_value)?;
+            self.total_rows += 1;
+            self.rows.push(row, self.max_rows);
+        }
+
+        Ok(())
+    }
+
+    fn finish(self) -> Option<StreamingSelection> {
+        let columns = self.columns?;
+        Some(StreamingSelection {
+            columns,
+            selection: self.rows.finish(self.max_rows),
+            total_rows: self.total_rows,
+        })
+    }
+}
+
+impl StreamingRows {
+    fn new(max_rows: usize) -> Self {
+        if max_rows == 0 {
+            Self::Unlimited(Vec::new())
+        } else {
+            Self::Pending(Vec::new())
+        }
+    }
+
+    fn push(&mut self, row: Vec<CellValue>, max_rows: usize) {
+        match self {
+            Self::Unlimited(rows) | Self::Pending(rows) => rows.push(row),
+            Self::Truncated {
+                tail_rows,
+                bottom_count,
+                ..
+            } => {
+                if *bottom_count == 0 {
+                    return;
+                }
+                if tail_rows.len() == *bottom_count {
+                    tail_rows.pop_front();
+                }
+                tail_rows.push_back(row);
+                return;
+            }
+        }
+
+        let Self::Pending(rows) = self else {
+            return;
+        };
+
+        if rows.len() <= max_rows.saturating_add(3) {
+            return;
+        }
+
+        let top_count = max_rows.div_ceil(2);
+        let bottom_count = max_rows - top_count;
+        let mut tail_rows = rows.split_off(rows.len() - bottom_count);
+        rows.truncate(top_count);
+        let top_rows = std::mem::take(rows);
+
+        *self = Self::Truncated {
+            top_rows,
+            tail_rows: tail_rows.drain(..).collect(),
+            bottom_count,
+        };
+    }
+
+    fn finish(self, max_rows: usize) -> RowSelection {
+        match self {
+            Self::Unlimited(rows) | Self::Pending(rows) => RowSelection {
+                shown_count: rows.len(),
+                truncated: false,
+                rows: rows.into_iter().map(VisibleRow::Data).collect(),
+            },
+            Self::Truncated {
+                top_rows,
+                tail_rows,
+                ..
+            } => {
+                let mut rows = Vec::with_capacity(max_rows + 3);
+                rows.extend(top_rows.into_iter().map(VisibleRow::Data));
+                rows.extend([
+                    VisibleRow::Divider,
+                    VisibleRow::Divider,
+                    VisibleRow::Divider,
+                ]);
+                rows.extend(tail_rows.into_iter().map(VisibleRow::Data));
+                RowSelection {
+                    rows,
+                    shown_count: max_rows,
+                    truncated: true,
+                }
+            }
+        }
+    }
+}
+
 fn extract_columns(batch: &RecordBatch) -> Vec<ColumnMeta> {
     batch
         .schema()
@@ -192,33 +360,39 @@ fn extract_columns(batch: &RecordBatch) -> Vec<ColumnMeta> {
         .collect()
 }
 
+#[cfg(test)]
 fn extract_rows(batches: &[RecordBatch], null_value: &str) -> Result<Vec<Vec<CellValue>>> {
     let mut rows = Vec::new();
 
     for batch in batches {
         for row_index in 0..batch.num_rows() {
-            let mut row = Vec::with_capacity(batch.num_columns());
-            for column in batch.columns() {
-                if column.is_null(row_index) {
-                    row.push(CellValue {
-                        text: null_value.to_string(),
-                        is_null: true,
-                    });
-                } else {
-                    row.push(CellValue {
-                        text: array_value_to_string(column.as_ref(), row_index)
-                            .context("failed to stringify arrow value")?,
-                        is_null: false,
-                    });
-                }
-            }
-            rows.push(row);
+            rows.push(extract_row(batch, row_index, null_value)?);
         }
     }
 
     Ok(rows)
 }
 
+fn extract_row(batch: &RecordBatch, row_index: usize, null_value: &str) -> Result<Vec<CellValue>> {
+    let mut row = Vec::with_capacity(batch.num_columns());
+    for column in batch.columns() {
+        if column.is_null(row_index) {
+            row.push(CellValue {
+                text: null_value.to_string(),
+                is_null: true,
+            });
+        } else {
+            row.push(CellValue {
+                text: array_value_to_string(column.as_ref(), row_index)
+                    .context("failed to stringify arrow value")?,
+                is_null: false,
+            });
+        }
+    }
+    Ok(row)
+}
+
+#[cfg(test)]
 fn select_rows(rows: &[Vec<CellValue>], max_rows: usize) -> RowSelection {
     if max_rows == 0 || rows.len() <= max_rows.saturating_add(3) || rows.len() <= max_rows {
         return RowSelection {
@@ -1018,12 +1192,15 @@ fn parse_env_var(var_name: &str) -> Option<usize> {
 mod tests {
     use super::*;
     use duckdb::arrow::{
-        array::{ArrayRef, BooleanArray, Float64Array, Int64Array, StringArray},
+        array::{Array, ArrayRef, BooleanArray, Float64Array, Int64Array, StringArray},
         datatypes::{DataType, Field, Schema},
         record_batch::RecordBatch,
     };
     use indoc::indoc;
-    use std::sync::Arc;
+    use std::{
+        collections::VecDeque,
+        sync::{Arc, Weak},
+    };
 
     fn batch(fields: Vec<Field>, columns: Vec<ArrayRef>) -> RecordBatch {
         RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap()
@@ -1040,6 +1217,38 @@ mod tests {
         CellValue {
             text: text.to_string(),
             is_null: true,
+        }
+    }
+
+    struct StreamingOnlyBatches {
+        batches: VecDeque<RecordBatch>,
+        previous_first_column: Option<Weak<dyn Array>>,
+    }
+
+    impl StreamingOnlyBatches {
+        fn new(batches: Vec<RecordBatch>) -> Self {
+            Self {
+                batches: batches.into(),
+                previous_first_column: None,
+            }
+        }
+    }
+
+    impl Iterator for StreamingOnlyBatches {
+        type Item = RecordBatch;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            if let Some(previous_first_column) = &self.previous_first_column {
+                assert!(
+                    previous_first_column.upgrade().is_none(),
+                    "render_streaming retained a previous batch instead of consuming incrementally"
+                );
+            }
+
+            let batch = self.batches.pop_front()?;
+            self.previous_first_column =
+                (batch.num_columns() > 0).then(|| Arc::downgrade(batch.column(0)));
+            Some(batch)
         }
     }
 
@@ -1076,6 +1285,149 @@ mod tests {
                 └─────────┴────────┘"
             }
         );
+    }
+
+    #[test]
+    fn streaming_render_supports_multi_batch_input() {
+        let batches = vec![
+            batch(
+                vec![
+                    Field::new("name", DataType::Utf8, false),
+                    Field::new("age", DataType::Int64, false),
+                ],
+                vec![
+                    Arc::new(StringArray::from(vec!["Ada", "Linus"])) as ArrayRef,
+                    Arc::new(Int64Array::from(vec![37, 54])) as ArrayRef,
+                ],
+            ),
+            batch(
+                vec![
+                    Field::new("name", DataType::Utf8, false),
+                    Field::new("age", DataType::Int64, false),
+                ],
+                vec![
+                    Arc::new(StringArray::from(vec!["Grace"])) as ArrayRef,
+                    Arc::new(Int64Array::from(vec![67])) as ArrayRef,
+                ],
+            ),
+        ];
+
+        let table = DuckBox::new(Config {
+            max_width: 80,
+            color: false,
+            ..Config::default()
+        })
+        .render_streaming(StreamingOnlyBatches::new(batches))
+        .unwrap();
+
+        assert_eq!(
+            table,
+            indoc! {"
+                ┌─────────┬────────┐
+                │  name   │  age   │
+                │ varchar │ bigint │
+                ├─────────┼────────┤
+                │ Ada     │     37 │
+                │ Linus   │     54 │
+                │ Grace   │     67 │
+                └─────────┴────────┘"
+            }
+        );
+    }
+
+    #[test]
+    fn streaming_render_truncation_matches_single_batch_snapshot() {
+        let batch1 = batch(
+            vec![
+                Field::new("name", DataType::Utf8, false),
+                Field::new("dept", DataType::Utf8, false),
+                Field::new("n", DataType::Int64, false),
+            ],
+            vec![
+                Arc::new(StringArray::from(
+                    (1..=8)
+                        .map(|i| format!("Employee_{i:03}"))
+                        .collect::<Vec<_>>(),
+                )) as ArrayRef,
+                Arc::new(StringArray::from(vec!["Ops"; 8])) as ArrayRef,
+                Arc::new(Int64Array::from((1..=8).collect::<Vec<_>>())) as ArrayRef,
+            ],
+        );
+        let batch2 = batch(
+            vec![
+                Field::new("name", DataType::Utf8, false),
+                Field::new("dept", DataType::Utf8, false),
+                Field::new("n", DataType::Int64, false),
+            ],
+            vec![
+                Arc::new(StringArray::from(
+                    (9..=16)
+                        .map(|i| format!("Employee_{i:03}"))
+                        .collect::<Vec<_>>(),
+                )) as ArrayRef,
+                Arc::new(StringArray::from(vec!["Ops"; 8])) as ArrayRef,
+                Arc::new(Int64Array::from((9..=16).collect::<Vec<_>>())) as ArrayRef,
+            ],
+        );
+        let batch3 = batch(
+            vec![
+                Field::new("name", DataType::Utf8, false),
+                Field::new("dept", DataType::Utf8, false),
+                Field::new("n", DataType::Int64, false),
+            ],
+            vec![
+                Arc::new(StringArray::from(
+                    (17..=24)
+                        .map(|i| format!("Employee_{i:03}"))
+                        .collect::<Vec<_>>(),
+                )) as ArrayRef,
+                Arc::new(StringArray::from(vec!["Ops"; 8])) as ArrayRef,
+                Arc::new(Int64Array::from((17..=24).collect::<Vec<_>>())) as ArrayRef,
+            ],
+        );
+
+        let actual = DuckBox::new(Config {
+            max_width: 120,
+            color: false,
+            ..Config::default()
+        })
+        .render_streaming(StreamingOnlyBatches::new(vec![batch1, batch2, batch3]))
+        .unwrap();
+
+        let expected = indoc! {"
+            ┌──────────────┬─────────┬────────┐
+            │     name     │  dept   │   n    │
+            │   varchar    │ varchar │ bigint │
+            ├──────────────┼─────────┼────────┤
+            │ Employee_001 │ Ops     │      1 │
+            │ Employee_002 │ Ops     │      2 │
+            │ Employee_003 │ Ops     │      3 │
+            │ Employee_004 │ Ops     │      4 │
+            │ Employee_005 │ Ops     │      5 │
+            │ Employee_006 │ Ops     │      6 │
+            │ Employee_007 │ Ops     │      7 │
+            │ Employee_008 │ Ops     │      8 │
+            │ Employee_009 │ Ops     │      9 │
+            │ Employee_010 │ Ops     │     10 │
+            │      ·       │  ·      │     ·  │
+            │      ·       │  ·      │     ·  │
+            │      ·       │  ·      │     ·  │
+            │ Employee_015 │ Ops     │     15 │
+            │ Employee_016 │ Ops     │     16 │
+            │ Employee_017 │ Ops     │     17 │
+            │ Employee_018 │ Ops     │     18 │
+            │ Employee_019 │ Ops     │     19 │
+            │ Employee_020 │ Ops     │     20 │
+            │ Employee_021 │ Ops     │     21 │
+            │ Employee_022 │ Ops     │     22 │
+            │ Employee_023 │ Ops     │     23 │
+            │ Employee_024 │ Ops     │     24 │
+            ├──────────────┴─────────┴────────┤
+            │ 24 rows (20 shown)    3 columns │
+            └─────────────────────────────────┘"
+        };
+
+        assert_eq!(actual, expected);
     }
 
     #[test]

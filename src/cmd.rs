@@ -81,12 +81,11 @@ fn pretty_query(conn: &Connection, query: &str) -> Result<String> {
     let mut stmt = conn
         .prepare("SELECT * FROM dq_output")
         .context("failed to prepare pretty output query")?;
-    let batches: Vec<_> = stmt
+    let batches = stmt
         .query_arrow([])
-        .context("failed to query pretty output")?
-        .collect();
+        .context("failed to query pretty output")?;
     DuckBox::default()
-        .render(&batches)
+        .render_streaming(batches)
         .context("failed to format pretty output")
 }
 
