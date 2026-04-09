@@ -137,8 +137,7 @@ fn materialize_input_to_temp_parquet(conn: &Connection, format: &Format) -> Resu
     );
     conn.execute_batch(&sql)
         .context("failed to materialize input to temp parquet")?;
-    fs::write(temp_dir.path().join(".dq-owned"), b"")
-        .context("failed to mark temp source dir")?;
+    fs::write(temp_dir.path().join(".dq-owned"), b"").context("failed to mark temp source dir")?;
 
     let persisted_dir = temp_dir.keep();
     let absolute = fs::canonicalize(persisted_dir.join("source.parquet")).with_context(|| {
@@ -171,15 +170,21 @@ fn cleanup_owned_source(plan: &Plan) -> Result<()> {
         return Ok(());
     };
     let marker_path = source_dir.join(".dq-owned");
-    if !marker_path
-        .try_exists()
-        .with_context(|| format!("failed to inspect cleanup marker `{}`", marker_path.display()))?
-    {
+    if !marker_path.try_exists().with_context(|| {
+        format!(
+            "failed to inspect cleanup marker `{}`",
+            marker_path.display()
+        )
+    })? {
         return Ok(());
     }
 
-    fs::remove_dir_all(source_dir)
-        .with_context(|| format!("failed to clean up temp source dir `{}`", source_dir.display()))
+    fs::remove_dir_all(source_dir).with_context(|| {
+        format!(
+            "failed to clean up temp source dir `{}`",
+            source_dir.display()
+        )
+    })
 }
 
 fn sql_string_literal(value: &str) -> String {

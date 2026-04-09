@@ -47,9 +47,11 @@ impl Plan {
     }
 
     pub fn compile_sql(&self) -> String {
-        self.ops.iter().fold(base_query(&self.source_path), |query, op| {
-            compile_op(query, op)
-        })
+        self.ops
+            .iter()
+            .fold(base_query(&self.source_path), |query, op| {
+                compile_op(query, op)
+            })
     }
 
     pub fn write_to(&self, mut writer: impl Write) -> Result<()> {
@@ -113,10 +115,9 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_plan_version() {
-        let err = Plan::from_json_str(
-            r#"{"version":2,"source_path":"/tmp/input.parquet","ops":[]}"#,
-        )
-        .unwrap_err();
+        let err =
+            Plan::from_json_str(r#"{"version":2,"source_path":"/tmp/input.parquet","ops":[]}"#)
+                .unwrap_err();
 
         assert!(err.to_string().contains("unsupported dq plan version: 2"));
     }
