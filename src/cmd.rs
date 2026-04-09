@@ -36,18 +36,30 @@ pub fn select(conn: &Connection, columns: &str) -> Result<()> {
 }
 
 pub fn where_clause(conn: &Connection, clause: &str) -> Result<()> {
-    let query = format!("SELECT * FROM read_arrow('/dev/stdin') WHERE {clause}");
-    emit_relation_query(conn, &query).context("failed to filter data")
+    let plan = Plan::read_from(io::stdin().lock())
+        .context("failed to read input plan")?
+        .with_op(Op::Where {
+            clause: clause.to_string(),
+        });
+    emit_plan_or_pretty(conn, &plan).context("failed to filter data")
 }
 
 pub fn limit(conn: &Connection, count: &str) -> Result<()> {
-    let query = format!("SELECT * FROM read_arrow('/dev/stdin') LIMIT {count}");
-    emit_relation_query(conn, &query).context("failed to limit rows")
+    let plan = Plan::read_from(io::stdin().lock())
+        .context("failed to read input plan")?
+        .with_op(Op::Limit {
+            count: count.to_string(),
+        });
+    emit_plan_or_pretty(conn, &plan).context("failed to limit rows")
 }
 
 pub fn order_by(conn: &Connection, clause: &str) -> Result<()> {
-    let query = format!("SELECT * FROM read_arrow('/dev/stdin') ORDER BY {clause}");
-    emit_relation_query(conn, &query).context("failed to order rows")
+    let plan = Plan::read_from(io::stdin().lock())
+        .context("failed to read input plan")?
+        .with_op(Op::OrderBy {
+            clause: clause.to_string(),
+        });
+    emit_plan_or_pretty(conn, &plan).context("failed to order rows")
 }
 
 pub fn describe(conn: &Connection) -> Result<()> {
