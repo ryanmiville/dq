@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::io::{Read, Write};
 
 const PLAN_VERSION: u32 = 1;
 
@@ -51,6 +52,18 @@ impl Plan {
         })
     }
 
+    pub fn write_to(&self, mut writer: impl Write) -> Result<()> {
+        writeln!(writer, "{}", self.to_json_string()?).context("failed to write dq plan json")
+    }
+
+    pub fn read_from(mut reader: impl Read) -> Result<Self> {
+        let mut json = String::new();
+        reader
+            .read_to_string(&mut json)
+            .context("failed to read dq plan json")?;
+        Self::from_json_str(&json)
+    }
+
     fn validate(&self) -> Result<()> {
         if self.version != PLAN_VERSION {
             anyhow::bail!("unsupported dq plan version: {}", self.version);
@@ -81,6 +94,7 @@ fn sql_string_literal(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{Op, Plan};
+    use std::io::Cursor;
 
     #[test]
     fn round_trips_plan_json() {
@@ -182,5 +196,58 @@ mod tests {
             sql,
             "DESCRIBE SELECT * FROM (SELECT * FROM (SELECT * FROM '/tmp/ada''s.parquet') AS q WHERE age > 40) AS q"
         );
+    }
+
+    #[test]
+    fn writes_plan_json_with_trailing_newline() {
+        let plan = Plan::new("/tmp/input.parquet").with_op(Op::Where {
+            clause: "age > 40".to_string(),
+        });
+        let mut out = Vec::new();
+
+        plan.write_to(&mut out).unwrap();
+
+        let written = String::from_utf8(out).unwrap();
+        assert_eq!(written, format!("{}\n", plan.to_json_string().unwrap()));
+    }
+
+    #[test]
+    fn reads_plan_from_reader() {
+        let plan = Plan::new("/tmp/input.parquet").with_op(Op::Where {
+            clause: "age > 40".to_string(),
+        });
+        let mut out = Vec::new();
+        plan.write_to(&mut out).unwrap();
+
+        let decoded = Plan::read_from(Cursor::new(out)).unwrap();
+
+        assert_eq!(decoded, plan);
+    }
+
+    #[test]
+    fn reads_plan_with_trailing_whitespace() {
+        let decoded = Plan::read_from(Cursor::new(
+            b"{\"version\":1,\"source_path\":\"/tmp/input.parquet\",\"ops\":[]}\n\t  ",
+        ))
+        .unwrap();
+
+        assert_eq!(decoded, Plan::new("/tmp/input.parquet"));
+    }
+
+    #[test]
+    fn read_from_reports_invalid_json() {
+        let err = Plan::read_from(Cursor::new(b"not json".as_slice())).unwrap_err();
+
+        assert!(err.to_string().contains("failed to parse dq plan json"));
+    }
+
+    #[test]
+    fn read_from_rejects_unsupported_version() {
+        let err = Plan::read_from(Cursor::new(
+            b"{\"version\":2,\"source_path\":\"/tmp/input.parquet\",\"ops\":[]}".as_slice(),
+        ))
+        .unwrap_err();
+
+        assert!(err.to_string().contains("unsupported dq plan version: 2"));
     }
 }
