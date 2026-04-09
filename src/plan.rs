@@ -45,12 +45,37 @@ impl Plan {
         serde_json::to_string(self).context("failed to serialize dq plan json")
     }
 
+    pub fn compile_sql(&self) -> String {
+        self.ops.iter().fold(base_query(&self.source_path), |query, op| {
+            compile_op(query, op)
+        })
+    }
+
     fn validate(&self) -> Result<()> {
         if self.version != PLAN_VERSION {
             anyhow::bail!("unsupported dq plan version: {}", self.version);
         }
         Ok(())
     }
+}
+
+fn base_query(source_path: &str) -> String {
+    format!("SELECT * FROM {}", sql_string_literal(source_path))
+}
+
+fn compile_op(input: String, op: &Op) -> String {
+    match op {
+        Op::Select { columns } => format!("SELECT {columns} FROM ({input}) AS q"),
+        Op::Where { clause } => format!("SELECT * FROM ({input}) AS q WHERE {clause}"),
+        Op::OrderBy { clause } => format!("SELECT * FROM ({input}) AS q ORDER BY {clause}"),
+        Op::Limit { count } => format!("SELECT * FROM ({input}) AS q LIMIT {count}"),
+        Op::Describe => format!("DESCRIBE SELECT * FROM ({input}) AS q"),
+        Op::Summarize => format!("SUMMARIZE SELECT * FROM ({input}) AS q"),
+    }
+}
+
+fn sql_string_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
 }
 
 #[cfg(test)]
@@ -110,6 +135,52 @@ mod tests {
                     columns: "name".to_string(),
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn compiles_where_plan_to_nested_sql() {
+        let sql = Plan::new("/tmp/input.parquet")
+            .with_op(Op::Where {
+                clause: "age > 40".to_string(),
+            })
+            .compile_sql();
+
+        assert_eq!(
+            sql,
+            "SELECT * FROM (SELECT * FROM '/tmp/input.parquet') AS q WHERE age > 40"
+        );
+    }
+
+    #[test]
+    fn preserves_transform_order_when_compiling_sql() {
+        let sql = Plan::new("/tmp/input.parquet")
+            .with_op(Op::Select {
+                columns: "name".to_string(),
+            })
+            .with_op(Op::Where {
+                clause: "age > 40".to_string(),
+            })
+            .compile_sql();
+
+        assert_eq!(
+            sql,
+            "SELECT * FROM (SELECT name FROM (SELECT * FROM '/tmp/input.parquet') AS q) AS q WHERE age > 40"
+        );
+    }
+
+    #[test]
+    fn compiles_describe_over_prior_pipeline_and_escapes_source_path() {
+        let sql = Plan::new("/tmp/ada's.parquet")
+            .with_op(Op::Where {
+                clause: "age > 40".to_string(),
+            })
+            .with_op(Op::Describe)
+            .compile_sql();
+
+        assert_eq!(
+            sql,
+            "DESCRIBE SELECT * FROM (SELECT * FROM (SELECT * FROM '/tmp/ada''s.parquet') AS q WHERE age > 40) AS q"
         );
     }
 }
