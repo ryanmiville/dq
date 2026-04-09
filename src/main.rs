@@ -10,8 +10,9 @@ use format::Format;
 
 /// Shell-first data pipelines powered by DuckDB.
 ///
-/// Pipe-compose subcommands to build data pipelines. Stages exchange Arrow
-/// format over stdin/stdout, so you can chain them with Unix pipes.
+/// Pipe-compose subcommands to build data pipelines. Intermediate stages
+/// exchange JSON query plans over stdin/stdout, and terminal writes pretty
+/// tables when stdout is a TTY.
 #[derive(Parser)]
 #[command(version)]
 struct Cli {
@@ -21,7 +22,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Read data from stdin or a file and output Arrow
+    /// Read data from stdin or a file and output a query plan
     ///
     /// Presets: csv, json, json-array. Any other path is treated as a file source.
     /// Use --expr for raw DuckDB read expressions.
@@ -35,7 +36,7 @@ enum Command {
         expr: Option<String>,
     },
 
-    /// Read Arrow from stdin and write to stdout in the given format
+    /// Read a query plan from stdin and write query results in the given format
     ///
     /// Presets: csv, json, json-array. Any other path is treated as a file
     /// destination. Use --expr for raw DuckDB COPY expressions.
@@ -49,46 +50,46 @@ enum Command {
         expr: Option<String>,
     },
 
-    /// Project columns from Arrow input using a SQL SELECT expression
+    /// Project columns from planned input using a SQL SELECT expression
     ///
-    /// The expression is interpolated into SELECT <columns> FROM stdin.
+    /// The expression is appended to the query plan as SELECT <columns>.
     Select {
         /// SQL column expression (e.g. "name, age * 2 AS double_age")
         columns: String,
     },
 
-    /// Filter rows from Arrow input using a SQL WHERE expression
+    /// Filter rows from planned input using a SQL WHERE expression
     ///
-    /// The expression is interpolated into SELECT * FROM stdin WHERE <clause>.
+    /// The expression is appended to the query plan as WHERE <clause>.
     Where {
         /// SQL boolean expression (e.g. "age > 30 AND name LIKE 'A%'")
         clause: String,
     },
 
-    /// Limit the number of rows from Arrow input
+    /// Limit the number of rows from planned input
     ///
-    /// The count is interpolated into SELECT * FROM stdin LIMIT <count>.
+    /// The count is appended to the query plan as LIMIT <count>.
     Limit {
         /// Maximum number of rows to return
         count: String,
     },
 
-    /// Order rows from Arrow input using a SQL ORDER BY expression
+    /// Order rows from planned input using a SQL ORDER BY expression
     ///
-    /// The expression is interpolated into SELECT * FROM stdin ORDER BY <clause>.
+    /// The expression is appended to the query plan as ORDER BY <clause>.
     OrderBy {
         /// SQL ORDER BY expression (e.g. "age DESC, name ASC")
         clause: String,
     },
 
-    /// Describe the schema of Arrow input
+    /// Describe the schema of planned input
     ///
-    /// Internally runs DESCRIBE SELECT * FROM stdin.
+    /// Internally appends a DESCRIBE step to the query plan.
     Describe,
 
-    /// Summarize Arrow input with column statistics
+    /// Summarize planned input with column statistics
     ///
-    /// Internally runs SUMMARIZE SELECT * FROM stdin.
+    /// Internally appends a SUMMARIZE step to the query plan.
     Summarize,
 }
 
@@ -116,18 +117,5 @@ fn run() -> Result<()> {
 }
 
 fn open_connection() -> Result<Connection> {
-    let conn = Connection::open_in_memory().context("failed to open duckdb")?;
-    load_arrow(&conn)?;
-    Ok(conn)
-}
-
-/// Load the Arrow community extension. Tries LOAD first to avoid the
-/// remove-and-redownload that INSTALL triggers — concurrent INSTALL calls
-/// race on the shared extension directory and corrupt each other.
-fn load_arrow(conn: &Connection) -> Result<()> {
-    if conn.execute_batch("LOAD arrow").is_ok() {
-        return Ok(());
-    }
-    conn.execute_batch("INSTALL arrow FROM community; LOAD arrow;")
-        .context("failed to install and load duckdb arrow extension")
+    Connection::open_in_memory().context("failed to open duckdb")
 }
