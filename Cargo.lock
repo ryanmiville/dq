@@ -553,6 +553,8 @@ dependencies = [
  "dq_test_macros",
  "duckdb",
  "indoc",
+ "serde",
+ "serde_json",
  "tempfile",
  "terminal_size",
  "unicode-width",

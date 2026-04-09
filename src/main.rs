@@ -1,6 +1,7 @@
 mod cmd;
 mod duckbox;
 mod format;
+mod plan;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
