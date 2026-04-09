@@ -63,26 +63,17 @@ pub fn order_by(conn: &Connection, clause: &str) -> Result<()> {
 }
 
 pub fn describe(conn: &Connection) -> Result<()> {
-    conn.execute_batch("CREATE TEMP TABLE dq_input AS SELECT * FROM read_arrow('/dev/stdin');")
-        .context("failed to describe input")?;
-
-    let query = "SELECT * FROM (DESCRIBE dq_input)";
-    emit_relation_query(conn, query).context("failed to describe input")
+    let plan = Plan::read_from(io::stdin().lock())
+        .context("failed to read input plan")?
+        .with_op(Op::Describe);
+    emit_plan_or_pretty(conn, &plan).context("failed to describe input")
 }
 
 pub fn summarize(conn: &Connection) -> Result<()> {
-    conn.execute_batch("CREATE TEMP TABLE dq_input AS SELECT * FROM read_arrow('/dev/stdin');")
-        .context("failed to summarize input")?;
-
-    let query = "SELECT * FROM (SUMMARIZE dq_input)";
-    emit_relation_query(conn, query).context("failed to summarize input")
-}
-
-fn emit_relation_query(conn: &Connection, query: &str) -> Result<()> {
-    match output_mode() {
-        OutputMode::Arrow => emit_arrow_query(conn, query),
-        OutputMode::Pretty => print_pretty_query(conn, query),
-    }
+    let plan = Plan::read_from(io::stdin().lock())
+        .context("failed to read input plan")?
+        .with_op(Op::Summarize);
+    emit_plan_or_pretty(conn, &plan).context("failed to summarize input")
 }
 
 fn emit_plan_or_pretty(conn: &Connection, plan: &Plan) -> Result<()> {
@@ -92,12 +83,6 @@ fn emit_plan_or_pretty(conn: &Connection, plan: &Plan) -> Result<()> {
 
     plan.write_to(io::stdout().lock())
         .context("failed to write output plan")
-}
-
-fn emit_arrow_query(conn: &Connection, query: &str) -> Result<()> {
-    let sql = format!("COPY ({query}) TO '/dev/stdout' (FORMAT ARROW);");
-    conn.execute_batch(&sql)
-        .context("failed to write arrow output")
 }
 
 fn print_pretty_query(conn: &Connection, query: &str) -> Result<()> {
@@ -122,21 +107,8 @@ fn pretty_query(conn: &Connection, query: &str) -> Result<String> {
         .context("failed to format pretty output")
 }
 
-fn output_mode() -> OutputMode {
-    if stdout_is_terminal() {
-        OutputMode::Pretty
-    } else {
-        OutputMode::Arrow
-    }
-}
-
 fn stdout_is_terminal() -> bool {
     io::stdout().is_terminal()
-}
-
-enum OutputMode {
-    Arrow,
-    Pretty,
 }
 
 fn build_source_plan(conn: &Connection, format: &Format) -> Result<Plan> {

@@ -82,8 +82,8 @@ fn compile_op(input: String, op: &Op) -> String {
         Op::Where { clause } => format!("SELECT * FROM ({input}) AS q WHERE {clause}"),
         Op::OrderBy { clause } => format!("SELECT * FROM ({input}) AS q ORDER BY {clause}"),
         Op::Limit { count } => format!("SELECT * FROM ({input}) AS q LIMIT {count}"),
-        Op::Describe => format!("DESCRIBE SELECT * FROM ({input}) AS q"),
-        Op::Summarize => format!("SUMMARIZE SELECT * FROM ({input}) AS q"),
+        Op::Describe => format!("SELECT * FROM (DESCRIBE SELECT * FROM ({input}) AS q) AS q"),
+        Op::Summarize => format!("SELECT * FROM (SUMMARIZE SELECT * FROM ({input}) AS q) AS q"),
     }
 }
 
@@ -194,7 +194,22 @@ mod tests {
 
         assert_eq!(
             sql,
-            "DESCRIBE SELECT * FROM (SELECT * FROM (SELECT * FROM '/tmp/ada''s.parquet') AS q WHERE age > 40) AS q"
+            "SELECT * FROM (DESCRIBE SELECT * FROM (SELECT * FROM (SELECT * FROM '/tmp/ada''s.parquet') AS q WHERE age > 40) AS q) AS q"
+        );
+    }
+
+    #[test]
+    fn compiles_summarize_to_relation_sql() {
+        let sql = Plan::new("/tmp/input.parquet")
+            .with_op(Op::Limit {
+                count: "2".to_string(),
+            })
+            .with_op(Op::Summarize)
+            .compile_sql();
+
+        assert_eq!(
+            sql,
+            "SELECT * FROM (SUMMARIZE SELECT * FROM (SELECT * FROM (SELECT * FROM '/tmp/input.parquet') AS q LIMIT 2) AS q) AS q"
         );
     }
 
