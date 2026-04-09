@@ -5,7 +5,11 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::{duckbox::DuckBox, format::Format, plan::Plan};
+use crate::{
+    duckbox::DuckBox,
+    format::Format,
+    plan::{Op, Plan},
+};
 use anyhow::{Context, Result};
 use duckdb::Connection;
 
@@ -23,8 +27,12 @@ pub fn from(conn: &Connection, format: &Format) -> Result<()> {
 }
 
 pub fn select(conn: &Connection, columns: &str) -> Result<()> {
-    let query = format!("SELECT {columns} FROM read_arrow('/dev/stdin')");
-    emit_relation_query(conn, &query).context("failed to select columns")
+    let plan = Plan::read_from(io::stdin().lock())
+        .context("failed to read input plan")?
+        .with_op(Op::Select {
+            columns: columns.to_string(),
+        });
+    emit_plan_or_pretty(conn, &plan).context("failed to select columns")
 }
 
 pub fn where_clause(conn: &Connection, clause: &str) -> Result<()> {
