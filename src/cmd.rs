@@ -1,8 +1,7 @@
 use std::{
     fs,
     io::{self, IsTerminal},
-    path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
+    path::Path,
 };
 
 use crate::{
@@ -12,13 +11,17 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use duckdb::Connection;
+use tempfile::{Builder, TempDir};
 
 pub fn to(conn: &Connection, format: &Format) -> Result<()> {
     let plan = Plan::read_from(io::stdin().lock()).context("failed to read input plan")?;
     let query = plan.compile_sql();
     let sql = format!("COPY ({query}) TO {};", format.copy_format());
-    conn.execute_batch(&sql)
-        .context("failed to convert plan to output format")
+    finish_execution(
+        &plan,
+        conn.execute_batch(&sql)
+            .context("failed to convert plan to output format"),
+    )
 }
 
 pub fn from(conn: &Connection, format: &Format) -> Result<()> {
@@ -78,7 +81,7 @@ pub fn summarize(conn: &Connection) -> Result<()> {
 
 fn emit_plan_or_pretty(conn: &Connection, plan: &Plan) -> Result<()> {
     if stdout_is_terminal() {
-        return print_pretty_query(conn, &plan.compile_sql());
+        return finish_execution(plan, print_pretty_query(conn, &plan.compile_sql()));
     }
 
     plan.write_to(io::stdout().lock())
@@ -125,7 +128,8 @@ fn resolve_existing_path(path: &str) -> Result<String> {
 }
 
 fn materialize_input_to_temp_parquet(conn: &Connection, format: &Format) -> Result<String> {
-    let temp_path = next_temp_parquet_path();
+    let temp_dir = create_temp_source_dir()?;
+    let temp_path = temp_dir.path().join("source.parquet");
     let sql = format!(
         "COPY (SELECT * FROM {}) TO {} (FORMAT PARQUET);",
         format.read_fn(),
@@ -133,18 +137,49 @@ fn materialize_input_to_temp_parquet(conn: &Connection, format: &Format) -> Resu
     );
     conn.execute_batch(&sql)
         .context("failed to materialize input to temp parquet")?;
+    fs::write(temp_dir.path().join(".dq-owned"), b"")
+        .context("failed to mark temp source dir")?;
 
-    let absolute = fs::canonicalize(&temp_path)
-        .with_context(|| format!("failed to resolve temp parquet path `{}`", temp_path.display()))?;
+    let persisted_dir = temp_dir.keep();
+    let absolute = fs::canonicalize(persisted_dir.join("source.parquet")).with_context(|| {
+        format!(
+            "failed to resolve temp parquet path `{}`",
+            persisted_dir.join("source.parquet").display()
+        )
+    })?;
     Ok(absolute.to_string_lossy().into_owned())
 }
 
-fn next_temp_parquet_path() -> PathBuf {
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    std::env::temp_dir().join(format!("dq-{}-{timestamp}.parquet", std::process::id()))
+fn create_temp_source_dir() -> Result<TempDir> {
+    Builder::new()
+        .prefix("dq-")
+        .tempdir()
+        .context("failed to create temp source dir")
+}
+
+fn finish_execution(plan: &Plan, execution: Result<()>) -> Result<()> {
+    let cleanup = cleanup_owned_source(plan);
+    match (execution, cleanup) {
+        (Err(error), _) => Err(error),
+        (Ok(()), Ok(())) => Ok(()),
+        (Ok(()), Err(error)) => Err(error),
+    }
+}
+
+fn cleanup_owned_source(plan: &Plan) -> Result<()> {
+    let Some(source_dir) = Path::new(&plan.source_path).parent() else {
+        return Ok(());
+    };
+    let marker_path = source_dir.join(".dq-owned");
+    if !marker_path
+        .try_exists()
+        .with_context(|| format!("failed to inspect cleanup marker `{}`", marker_path.display()))?
+    {
+        return Ok(());
+    }
+
+    fs::remove_dir_all(source_dir)
+        .with_context(|| format!("failed to clean up temp source dir `{}`", source_dir.display()))
 }
 
 fn sql_string_literal(value: &str) -> String {
