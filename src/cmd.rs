@@ -1,16 +1,15 @@
 use std::io::{self, IsTerminal};
 
-use crate::{duckbox::DuckBox, format::Format};
+use crate::{duckbox::DuckBox, format::Format, plan::Plan};
 use anyhow::{Context, Result};
 use duckdb::Connection;
 
 pub fn to(conn: &Connection, format: &Format) -> Result<()> {
-    let sql = format!(
-        "CREATE TEMP TABLE dq_input AS SELECT * FROM read_arrow('/dev/stdin'); COPY dq_input TO {};",
-        format.copy_format()
-    );
+    let plan = Plan::read_from(io::stdin().lock()).context("failed to read input plan")?;
+    let query = plan.compile_sql();
+    let sql = format!("COPY ({query}) TO {};", format.copy_format());
     conn.execute_batch(&sql)
-        .context("failed to convert stdin to output format")
+        .context("failed to convert plan to output format")
 }
 
 pub fn from(conn: &Connection, format: &Format) -> Result<()> {
