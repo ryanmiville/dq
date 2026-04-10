@@ -34,4 +34,4 @@ input = ""
 success = false
 [cases.expect]
 kind = "stderr_contains"
-text = "IO Error"
+text = "Referenced column \"age\" not found"

@@ -1,0 +1,11 @@
+cmd = "{dq} from tests/data/people.json | {dq} to json"
+
+[[cases]]
+name = "reads_rows_from_file_path"
+input = ""
+[cases.expect]
+kind = "exact"
+stdout = """
+{"name":"Ada","age":37}
+{"name":"Linus","age":54}
+"""

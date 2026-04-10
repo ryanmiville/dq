@@ -20,5 +20,5 @@ input = ""
 [cases.expect]
 kind = "exact"
 stdout = """
-{"column_name":"json","column_type":"VARCHAR","min":null,"max":null,"approx_unique":0,"avg":null,"std":null,"q25":null,"q50":null,"q75":null,"count":0,"null_percentage":null}
+{"column_name":"json","column_type":"JSON","min":null,"max":null,"approx_unique":0,"avg":null,"std":null,"q25":null,"q50":null,"q75":null,"count":0,"null_percentage":null}
 """
