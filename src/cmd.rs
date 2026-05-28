@@ -1,17 +1,17 @@
 use std::{
-    fs,
+    env, fs,
     io::{self, IsTerminal},
     path::Path,
 };
 
 use crate::{
-    duckbox::DuckBox,
     format::Format,
     plan::{Op, Plan},
 };
 use anyhow::{Context, Result};
-use duckdb::Connection;
+use duckdb::{Connection, DuckboxColorMode, DuckboxMaximumWidth, DuckboxOptions, DuckboxRowLimit};
 use tempfile::{Builder, TempDir};
+use terminal_size::{Width, terminal_size_of};
 
 pub fn to(conn: &Connection, format: &Format) -> Result<()> {
     let plan = Plan::read_from(io::stdin().lock()).context("failed to read input plan")?;
@@ -90,24 +90,56 @@ fn emit_plan_or_pretty(conn: &Connection, plan: &Plan) -> Result<()> {
 
 fn print_pretty_query(conn: &Connection, query: &str) -> Result<()> {
     let table = pretty_query(conn, query)?;
-    println!("{table}");
+    print!("{table}");
     Ok(())
 }
 
 fn pretty_query(conn: &Connection, query: &str) -> Result<String> {
-    let sql = format!("CREATE TEMP TABLE dq_output AS {query};");
-    conn.execute_batch(&sql)
-        .context("failed to materialize pretty output")?;
-
-    let mut stmt = conn
-        .prepare("SELECT * FROM dq_output")
-        .context("failed to prepare pretty output query")?;
-    let batches = stmt
-        .query_arrow([])
-        .context("failed to query pretty output")?;
-    DuckBox::default()
-        .render_streaming(batches)
+    conn.query_duckbox_with_options(query, [], &duckbox_options())
         .context("failed to format pretty output")
+}
+
+fn duckbox_options() -> DuckboxOptions {
+    DuckboxOptions::default()
+        .with_maximum_width_limit(maximum_width())
+        .with_maximum_row_limit(row_limit("DQ_MAX_ROWS", 20))
+        .with_color_mode(color_mode())
+}
+
+fn maximum_width() -> DuckboxMaximumWidth {
+    maximum_width_from_env(
+        parse_env_u64("DQ_MAX_WIDTH"),
+        terminal_size_of(io::stdout()).map(|(Width(width), _)| u64::from(width)),
+    )
+}
+
+fn maximum_width_from_env(
+    configured: Option<u64>,
+    terminal_width: Option<u64>,
+) -> DuckboxMaximumWidth {
+    DuckboxMaximumWidth::Cells(match configured {
+        Some(width) if width > 0 => width,
+        _ => terminal_width.map_or(120, |width| width.min(120)),
+    })
+}
+
+fn row_limit(var_name: &str, default: u64) -> DuckboxRowLimit {
+    match parse_env_u64(var_name).unwrap_or(default) {
+        0 => DuckboxRowLimit::Unlimited,
+        rows => DuckboxRowLimit::Rows(rows),
+    }
+}
+
+fn color_mode() -> DuckboxColorMode {
+    if stdout_is_terminal() && env::var_os("NO_COLOR").is_none() {
+        DuckboxColorMode::Always
+    } else {
+        DuckboxColorMode::Never
+    }
+}
+
+fn parse_env_u64(var_name: &str) -> Option<u64> {
+    env::var(var_name).ok().and_then(|s| s.parse().ok())
 }
 
 fn stdout_is_terminal() -> bool {
@@ -189,4 +221,49 @@ fn cleanup_owned_source(plan: &Plan) -> Result<()> {
 
 fn sql_string_literal(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_duckbox_width_caps_large_terminals() {
+        assert_eq!(
+            maximum_width_from_env(None, Some(160)),
+            DuckboxMaximumWidth::Cells(120)
+        );
+    }
+
+    #[test]
+    fn default_duckbox_width_uses_small_terminal_width() {
+        assert_eq!(
+            maximum_width_from_env(None, Some(100)),
+            DuckboxMaximumWidth::Cells(100)
+        );
+    }
+
+    #[test]
+    fn default_duckbox_width_falls_back_without_terminal_width() {
+        assert_eq!(
+            maximum_width_from_env(None, None),
+            DuckboxMaximumWidth::Cells(120)
+        );
+    }
+
+    #[test]
+    fn zero_duckbox_width_uses_default_width() {
+        assert_eq!(
+            maximum_width_from_env(Some(0), Some(100)),
+            DuckboxMaximumWidth::Cells(100)
+        );
+    }
+
+    #[test]
+    fn configured_duckbox_width_wins() {
+        assert_eq!(
+            maximum_width_from_env(Some(132), Some(100)),
+            DuckboxMaximumWidth::Cells(132)
+        );
+    }
 }

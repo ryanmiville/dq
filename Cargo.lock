@@ -597,7 +597,6 @@ dependencies = [
  "serde_json",
  "tempfile",
  "terminal_size",
- "unicode-width",
 ]
 
 [[package]]
@@ -621,8 +620,7 @@ dependencies = [
 [[package]]
 name = "duckdb"
 version = "1.10503.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0cb42b21e3be42ef14acda15ce8dc99c125ce5376b87c8016a432cf14ae65de1"
+source = "git+https://github.com/ryanmiville/duckdb-rs.git?branch=main#4210e8f86bf7ccdf29bb153afd892a108ee62582"
 dependencies = [
  "arrow",
  "cast",
@@ -1211,8 +1209,7 @@ checksum = "6800badb6cb2082ffd7b6a67e6125bb39f18782f793520caee8cb8846be06112"
 [[package]]
 name = "libduckdb-sys"
 version = "1.10503.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9a4389c243e7afa0fbc8d8471031335ddc8a2dac4534f3290c9c2ba3edabab5"
+source = "git+https://github.com/ryanmiville/duckdb-rs.git?branch=main#4210e8f86bf7ccdf29bb153afd892a108ee62582"
 dependencies = [
  "cc",
  "flate2",
@@ -2085,12 +2082,12 @@ dependencies = [
 
 [[package]]
 name = "terminal_size"
-version = "0.4.3"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60b8cb979cb11c32ce1603f8137b22262a9d131aaa5c37b5678025f22b8becd0"
+checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
  "rustix 1.1.4",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

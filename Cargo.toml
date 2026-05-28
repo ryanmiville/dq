@@ -10,12 +10,11 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.100"
 clap = { version = "4.5.60", features = ["derive"] }
-duckdb = { version = "1.10503.1", features = ["bundled"] }
+duckdb = { git = "https://github.com/ryanmiville/duckdb-rs.git", branch = "main", features = ["duckbox"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 tempfile = "3.26.0"
 terminal_size = "0.4.3"
-unicode-width = "0.2.0"
 
 [dev-dependencies]
 dq_test_fixtures = { path = "dq_test_fixtures" }

@@ -219,15 +219,14 @@ Ada|37
 
 ## Terminal auto-display
 
-When a stage's stdout is a terminal, it executes the accumulated plan and renders a pretty table. When piped or redirected, it emits JSON plan data for the next `dq` stage instead. This means the last command in a pipeline automatically pretty-prints without needing `dq to`, but if you want materialized rows in a pipe or file you should end the pipeline with `dq to ...`.
+When a stage's stdout is a terminal, it executes the accumulated plan and renders a native DuckDB duckbox table. When piped or redirected, it emits JSON plan data for the next `dq` stage instead. This means the last command in a pipeline automatically pretty-prints without needing `dq to`, but if you want materialized rows in a pipe or file you should end the pipeline with `dq to ...`.
 
 ### Environment variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DQ_MAX_WIDTH` | terminal width | Max table width in columns |
-| `DQ_MAX_ROWS` | `20` | Max rows before truncation |
-| `DQ_MAX_COL_WIDTH` | `20` | Preferred max column width |
+| `DQ_MAX_WIDTH` | min(stdout TTY width, `120`) | Max table width in cells; `0` = default |
+| `DQ_MAX_ROWS` | `20` | Max rows before truncation; `0` = unlimited |
 | `NO_COLOR` | — | Disable ANSI color when set |
 
 ## Notes

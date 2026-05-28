@@ -1,5 +1,4 @@
 mod cmd;
-mod duckbox;
 mod format;
 mod plan;
 
