@@ -60,7 +60,10 @@ dq/
 cargo build --release     # Build binary → target/release/dq
 cargo test                # Run all tests (compiles fixtures → test fns)
 cargo run -- from json   # Dev-run a single stage
+make check                # Final verification after editing Rust code
 ```
+
+After editing Rust code, always run `make check` as the final verification step.
 
 ## NOTES
 
