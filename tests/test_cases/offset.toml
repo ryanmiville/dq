@@ -1,0 +1,33 @@
+cmd = "{dq} from json | {dq} offset 1 | {dq} to json"
+
+[[cases]]
+name = "skips_rows"
+input = """
+{"name":"Ada","age":37}
+{"name":"Linus","age":54}
+{"name":"Grace","age":40}
+"""
+[cases.expect]
+kind = "exact"
+stdout = """
+{"name":"Linus","age":54}
+{"name":"Grace","age":40}
+"""
+
+[[cases]]
+name = "offset_past_end"
+input = """
+{"name":"Ada","age":37}
+"""
+[cases.expect]
+kind = "exact"
+stdout = """
+"""
+
+[[cases]]
+name = "empty"
+input = ""
+[cases.expect]
+kind = "exact"
+stdout = """
+"""

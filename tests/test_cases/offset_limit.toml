@@ -1,0 +1,16 @@
+cmd = "{dq} from json | {dq} offset 1 | {dq} limit 2 | {dq} to json"
+
+[[cases]]
+name = "offset_then_limit"
+input = """
+{"name":"Ada","age":37}
+{"name":"Linus","age":54}
+{"name":"Grace","age":40}
+{"name":"Alan","age":42}
+"""
+[cases.expect]
+kind = "exact"
+stdout = """
+{"name":"Linus","age":54}
+{"name":"Grace","age":40}
+"""

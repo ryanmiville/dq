@@ -18,6 +18,7 @@ pub enum Op {
     Where { clause: String },
     OrderBy { clause: String },
     Limit { count: String },
+    Offset { count: String },
     Describe,
     Summarize,
 }
@@ -84,6 +85,7 @@ fn compile_op(input: String, op: &Op) -> String {
         Op::Where { clause } => format!("SELECT * FROM ({input}) AS q WHERE {clause}"),
         Op::OrderBy { clause } => format!("SELECT * FROM ({input}) AS q ORDER BY {clause}"),
         Op::Limit { count } => format!("SELECT * FROM ({input}) AS q LIMIT {count}"),
+        Op::Offset { count } => format!("SELECT * FROM ({input}) AS q OFFSET {count}"),
         Op::Describe => format!("SELECT * FROM (DESCRIBE SELECT * FROM ({input}) AS q) AS q"),
         Op::Summarize => format!("SELECT * FROM (SUMMARIZE SELECT * FROM ({input}) AS q) AS q"),
     }

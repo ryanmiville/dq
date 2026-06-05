@@ -73,6 +73,14 @@ enum Command {
         count: String,
     },
 
+    /// Skip rows from planned input
+    ///
+    /// The count is appended to the query plan as OFFSET <count>.
+    Offset {
+        /// Number of rows to skip
+        count: String,
+    },
+
     /// Order rows from planned input using a SQL ORDER BY expression
     ///
     /// The expression is appended to the query plan as ORDER BY <clause>.
@@ -109,6 +117,7 @@ fn run() -> Result<()> {
         Command::Select { columns } => cmd::select(&conn, &columns),
         Command::Where { clause } => cmd::where_clause(&conn, &clause),
         Command::Limit { count } => cmd::limit(&conn, &count),
+        Command::Offset { count } => cmd::offset(&conn, &count),
         Command::OrderBy { clause } => cmd::order_by(&conn, &clause),
         Command::Describe => cmd::describe(&conn),
         Command::Summarize => cmd::summarize(&conn),

@@ -45,6 +45,7 @@ cargo build --release
 - `dq select <columns>`
 - `dq where <clause>`
 - `dq limit <count>`
+- `dq offset <count>`
 - `dq order-by <clause>`
 - `dq describe`
 - `dq summarize`
@@ -115,6 +116,20 @@ printf '{"name":"Ada","age":37}\n{"name":"Linus","age":54}\n{"name":"Grace","age
 
 ```
 {"name":"Ada","age":37}
+```
+
+### Offset
+
+```bash
+printf '{"name":"Ada","age":37}\n{"name":"Linus","age":54}\n{"name":"Grace","age":85}\n' |
+  dq from json |
+  dq offset 1 |
+  dq limit 1 |
+  dq to json
+```
+
+```
+{"name":"Linus","age":54}
 ```
 
 ### Format conversion

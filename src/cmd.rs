@@ -56,6 +56,15 @@ pub fn limit(conn: &Connection, count: &str) -> Result<()> {
     emit_plan_or_pretty(conn, &plan).context("failed to limit rows")
 }
 
+pub fn offset(conn: &Connection, count: &str) -> Result<()> {
+    let plan = Plan::read_from(io::stdin().lock())
+        .context("failed to read input plan")?
+        .with_op(Op::Offset {
+            count: count.to_string(),
+        });
+    emit_plan_or_pretty(conn, &plan).context("failed to offset rows")
+}
+
 pub fn order_by(conn: &Connection, clause: &str) -> Result<()> {
     let plan = Plan::read_from(io::stdin().lock())
         .context("failed to read input plan")?
