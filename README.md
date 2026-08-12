@@ -205,6 +205,19 @@ dq from data/input.json | dq where "age >= 40" | dq to csv
 dq from data/input.json | dq to data/filtered.csv
 ```
 
+### Pretty table output
+
+Use `to pretty` to request the same Duckbox table used for terminal auto-display, including when stdout is redirected:
+
+```bash
+cat data/input.json |
+  dq from json |
+  dq limit 5 |
+  dq to pretty > preview.txt
+```
+
+Pretty output is display-oriented and may be limited by `DQ_MAX_ROWS`; use `csv` or `json` for lossless export.
+
 ### Raw DuckDB expressions
 
 Use `--expr` to pass arbitrary DuckDB read/copy expressions:
@@ -243,6 +256,8 @@ When a stage's stdout is a terminal, it executes the accumulated plan and render
 | `DQ_MAX_WIDTH` | min(stdout TTY width, `120`) | Max table width in cells; `0` = default |
 | `DQ_MAX_ROWS` | `20` | Max rows before truncation; `0` = unlimited |
 | `NO_COLOR` | — | Disable ANSI color when set |
+
+These settings apply to both terminal auto-display and `dq to pretty`.
 
 ## Notes
 

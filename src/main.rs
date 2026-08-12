@@ -6,7 +6,7 @@ mod stream;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use duckdb::Connection;
-use format::Format;
+use format::{InputFormat, OutputFormat};
 
 /// Shell-first data pipelines powered by DuckDB.
 ///
@@ -38,8 +38,8 @@ enum Command {
 
     /// Read a query plan from stdin and write query results in the given format
     ///
-    /// Presets: csv, json, json-array. Any other path is treated as a file
-    /// destination. Use --expr for raw DuckDB COPY expressions.
+    /// Presets: csv, json, json-array, pretty. Any other path is treated as a
+    /// file destination. Use --expr for raw DuckDB COPY expressions.
     To {
         /// Output format preset or output file path
         #[arg(value_name = "FORMAT|PATH", required_unless_present = "expr")]
@@ -113,8 +113,8 @@ fn run() -> Result<()> {
     let conn = open_connection()?;
 
     match cli.command {
-        Command::From { format, expr } => cmd::from(&conn, &Format::parse(format, expr)),
-        Command::To { format, expr } => cmd::to(&conn, &Format::parse(format, expr)),
+        Command::From { format, expr } => cmd::from(&conn, &InputFormat::parse(format, expr)),
+        Command::To { format, expr } => cmd::to(&conn, &OutputFormat::parse(format, expr)),
         Command::Select { columns } => cmd::select(&conn, &columns),
         Command::Where { clause } => cmd::where_clause(&conn, &clause),
         Command::Limit { count } => cmd::limit(&conn, &count),

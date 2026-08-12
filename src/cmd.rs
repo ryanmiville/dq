@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    format::Format,
+    format::{InputFormat, OutputExecution, OutputFormat},
     plan::{Op, Plan},
     stream::{
         duplicate_stdin, finish_stdin_payload, is_broken_pipe, prepare_stdin_payload,
@@ -16,7 +16,7 @@ use anyhow::{Context, Result};
 use duckdb::{Connection, DuckboxColorMode, DuckboxMaximumWidth, DuckboxOptions, DuckboxRowLimit};
 use terminal_size::{Width, terminal_size_of};
 
-pub fn to(conn: &Connection, format: &Format) -> Result<()> {
+pub fn to(conn: &Connection, format: &OutputFormat) -> Result<()> {
     let mut input = duplicate_stdin()?;
     let plan = read_plan_header(&mut input).context("failed to read input plan")?;
     let payload_thread = if plan.source.is_stream() {
@@ -34,7 +34,14 @@ pub fn to(conn: &Connection, format: &Format) -> Result<()> {
     }
 }
 
-fn execute_to(conn: &Connection, plan: &Plan, format: &Format) -> Result<()> {
+fn execute_to(conn: &Connection, plan: &Plan, format: &OutputFormat) -> Result<()> {
+    match format.execution() {
+        OutputExecution::Copy(destination) => execute_copy(conn, plan, &destination),
+        OutputExecution::Pretty => print_pretty_query(conn, &plan.compile_sql()),
+    }
+}
+
+fn execute_copy(conn: &Connection, plan: &Plan, destination: &str) -> Result<()> {
     let source_query = Plan {
         ops: Vec::new(),
         ..plan.clone()
@@ -42,13 +49,12 @@ fn execute_to(conn: &Connection, plan: &Plan, format: &Format) -> Result<()> {
     .compile_sql();
     let query = plan.compile_sql_from_table("dq_source");
     conn.execute_batch(&format!(
-        "CREATE TEMP TABLE dq_source AS {source_query}; CREATE TEMP TABLE dq_result AS {query}; COPY dq_result TO {};",
-        format.copy_format()
+        "CREATE TEMP TABLE dq_source AS {source_query}; CREATE TEMP TABLE dq_result AS {query}; COPY dq_result TO {destination};"
     ))
     .context("failed to convert plan to output format")
 }
 
-pub fn from(conn: &Connection, format: &Format) -> Result<()> {
+pub fn from(conn: &Connection, format: &InputFormat) -> Result<()> {
     let plan = build_source_plan(format).context("failed to build input plan")?;
     if stdout_is_terminal() {
         print_pretty_query(conn, &plan.compile_sql()).context("failed to read input")
@@ -203,9 +209,9 @@ fn stdout_is_terminal() -> bool {
     io::stdout().is_terminal()
 }
 
-fn build_source_plan(format: &Format) -> Result<Plan> {
+fn build_source_plan(format: &InputFormat) -> Result<Plan> {
     match format {
-        Format::Path(path) => Ok(Plan::from_path(resolve_existing_path(path)?)),
+        InputFormat::Path(path) => Ok(Plan::from_path(resolve_existing_path(path)?)),
         _ => Ok(Plan::from_stream(format.read_fn())),
     }
 }

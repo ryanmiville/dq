@@ -15,7 +15,7 @@ dq/
 ├── src/
 │   ├── main.rs         # CLI entry, clap parsing, DuckDB connection setup
 │   ├── cmd.rs          # Subcommand implementations (from/to/select/where)
-│   ├── format.rs       # Format enum: presets (csv/json/json-array) + raw passthrough
+│   ├── format.rs       # Separate input/output formats; pretty output + raw passthrough
 │   ├── plan.rs         # Deferred source and operation plan + SQL compilation
 │   └── stream.rs       # Private framing protocol and exact stdin handoff
 ├── dq_test_macros/     # Proc-macro crate: generates #[test] fns from TOML fixtures
@@ -31,7 +31,7 @@ dq/
 | Task | Location | Notes |
 |------|----------|-------|
 | Add new subcommand | `src/main.rs` (Command enum), `src/cmd.rs` | Add clap variant + handler fn |
-| Add format preset | `src/format.rs` (Preset enum) | Implement `read_fn()` + `copy_format()` |
+| Add format preset | `src/format.rs` | Add it to `InputPreset` or `OutputPreset` and its execution mapping |
 | Add test cases | `tests/test_cases/*.toml` | Auto-discovered by proc-macro |
 | Change test fixture schema | `dq_test_fixtures/src/lib.rs` | Suite/Case/Expect types + validation |
 | Change test codegen | `dq_test_macros/src/lib.rs` | Proc-macro: fixture_tests! / fixture_tests_dir! |
@@ -43,6 +43,7 @@ dq/
 - **Pipeline protocol**: A fixed-size binary prefix and JSON plan header precede the unchanged raw payload. Intermediate stages update the header and relay payload bytes; endpoints parse the payload with DuckDB.
 - **Stdin handoff**: Parse headers only through the unbuffered duplicated descriptor in `src/stream.rs`. Exact reads prevent Rust from retaining bytes before DuckDB opens `/dev/stdin`.
 - **Source semantics**: File inputs remain canonicalized path references. Every non-path input is a single-pass stream; there is no materialized fallback.
+- **Format directions**: Input and output presets are separate. Output formats select either DuckDB COPY or Duckbox rendering; `pretty` is output-only.
 - **Format passthrough**: Non-preset strings passed directly as DuckDB expressions (read) or COPY options (write) — no validation
 - **DuckDB connection**: In-memory per invocation
 - **Test fixtures are TOML**: Each file defines `cmd` (pipeline template with `{dq}` placeholder) + `[[cases]]` array

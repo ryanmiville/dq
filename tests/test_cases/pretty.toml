@@ -1,0 +1,19 @@
+cmd = "cat tests/data/employees.json | {dq} from json | {dq} limit 5 | DQ_MAX_WIDTH=120 DQ_MAX_ROWS=0 NO_COLOR=1 {dq} to pretty"
+
+[[cases]]
+name = "renders_limited_streamed_file"
+input = ""
+[cases.expect]
+kind = "exact"
+stdout = """
+┌───────┬──────────────┬─────────────┬──────────┬───────────────┬──────────┬───────────┬─────────┬────────┐
+│  id   │     name     │ department  │  title   │     city      │  salary  │ years_exp │ active  │ rating │
+│ int64 │   varchar    │   varchar   │ varchar  │    varchar    │  double  │   int64   │ boolean │ double │
+├───────┼──────────────┼─────────────┼──────────┼───────────────┼──────────┼───────────┼─────────┼────────┤
+│     1 │ Employee_001 │ Marketing   │ Engineer │ Seattle       │ 81733.78 │         4 │ true    │    3.7 │
+│     2 │ Employee_002 │ Marketing   │ Lead     │ New York      │ 49469.58 │         6 │ true    │    3.0 │
+│     3 │ Employee_003 │ Engineering │ Director │ Boston        │ 78066.09 │        18 │ false   │    4.2 │
+│     4 │ Employee_004 │ Engineering │ Analyst  │ Boston        │ 96037.58 │         4 │ true    │    4.8 │
+│     5 │ Employee_005 │ Operations  │ Manager  │ San Francisco │ 101989.1 │        11 │ false   │    3.4 │
+└───────┴──────────────┴─────────────┴──────────┴───────────────┴──────────┴───────────┴─────────┴────────┘
+"""
