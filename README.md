@@ -2,7 +2,7 @@
 
 Shell-first data pipelines powered by DuckDB.
 
-Compose `from`, `select`, `where`, `order-by`, `limit`, `describe`, `summarize`, and `to` in Unix pipes. Intermediate stages exchange JSON query plans over stdin/stdout. `dq to ...` executes the accumulated plan and writes results.
+Compose `from`, `select`, `where`, `order-by`, `limit`, `describe`, `summarize`, and `to` in Unix pipes. Intermediate stages exchange a private framed query plan followed by the original raw input stream. `dq to ...` executes the accumulated plan and writes results.
 
 ```bash
 printf '{"name":"Ada","age":37}\n{"name":"Linus","age":54}\n' |
@@ -13,7 +13,7 @@ printf '{"name":"Ada","age":37}\n{"name":"Linus","age":54}\n' |
 # {"name":"Linus"}
 ```
 
-When stdout is a terminal, stages auto-execute the accumulated plan and pretty-print a table instead of emitting plan JSON:
+When stdout is a terminal, stages auto-execute the accumulated plan and pretty-print a table instead of emitting the internal stream:
 
 ```
 $ printf '{"name":"Ada","age":37}\n{"name":"Linus","age":54}\n' | dq from json
@@ -234,7 +234,7 @@ Ada|37
 
 ## Terminal auto-display
 
-When a stage's stdout is a terminal, it executes the accumulated plan and renders a native DuckDB duckbox table. When piped or redirected, it emits JSON plan data for the next `dq` stage instead. This means the last command in a pipeline automatically pretty-prints without needing `dq to`, but if you want materialized rows in a pipe or file you should end the pipeline with `dq to ...`.
+When a stage's stdout is a terminal, it executes the accumulated plan and renders a native DuckDB duckbox table. When piped or redirected, it emits a private framed plan and relays any raw input payload for the next `dq` stage. This means the last command in a pipeline automatically pretty-prints without needing `dq to`, but if you want materialized rows in a pipe or file you should end the pipeline with `dq to ...`.
 
 ### Environment variables
 
@@ -246,7 +246,7 @@ When a stage's stdout is a terminal, it executes the accumulated plan and render
 
 ## Notes
 
-- Intermediate pipeline stages exchange JSON query plans.
-- `dq to ...` executes the full accumulated plan in DuckDB.
-- Non-path `from` inputs are materialized to a temporary parquet file before later stages run.
+- Intermediate pipeline stages exchange a private framed plan and stream non-path input bytes unchanged.
+- `dq to ...` executes the full accumulated plan in DuckDB and parses streamed input at the endpoint.
+- File inputs remain path references; `dq` does not copy or delete user-owned source files.
 - `select`/`where` args are interpolated into SQL — keep inputs trusted.

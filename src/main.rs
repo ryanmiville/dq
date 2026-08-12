@@ -1,6 +1,7 @@
 mod cmd;
 mod format;
 mod plan;
+mod stream;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -10,7 +11,7 @@ use format::Format;
 /// Shell-first data pipelines powered by DuckDB.
 ///
 /// Pipe-compose subcommands to build data pipelines. Intermediate stages
-/// exchange JSON query plans over stdin/stdout, and terminal writes pretty
+/// exchange framed query plans and raw input over stdin/stdout, and terminal writes pretty
 /// tables when stdout is a TTY.
 #[derive(Parser)]
 #[command(version)]

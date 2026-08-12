@@ -1,0 +1,10 @@
+cmd = "{dq} from tests/data/people.json | {dq} where \"age > 40\" | {dq} to json"
+
+[[cases]]
+name = "filters_rows_from_plan"
+input = ""
+[cases.expect]
+kind = "exact"
+stdout = """
+{"name":"Linus","age":54}
+"""
