@@ -1,0 +1,12 @@
+cmd = "{dq} from json | {dq} where \"age >= 40\" | {dq} select name | {dq} sql"
+
+[[cases]]
+name = "prints_compiled_query_without_execution"
+input = """
+not valid json
+"""
+[cases.expect]
+kind = "exact"
+stdout = """
+SELECT name FROM (SELECT * FROM (SELECT * FROM read_json_auto('/dev/stdin')) AS q WHERE age >= 40) AS q;
+"""

@@ -34,6 +34,19 @@ pub fn to(conn: &Connection, format: &OutputFormat) -> Result<()> {
     }
 }
 
+pub fn sql() -> Result<()> {
+    let mut input = duplicate_stdin()?;
+    let plan = read_plan_header(&mut input).context("failed to read input plan")?;
+    let output = writeln!(io::stdout().lock(), "{};", plan.compile_sql())
+        .context("failed to write compiled sql");
+
+    io::copy(&mut input, &mut io::sink()).context("failed to drain input payload")?;
+    match output {
+        Err(error) if is_broken_pipe(&error) => Ok(()),
+        result => result,
+    }
+}
+
 fn execute_to(conn: &Connection, plan: &Plan, format: &OutputFormat) -> Result<()> {
     match format.execution() {
         OutputExecution::Copy(destination) => execute_copy(conn, plan, &destination),

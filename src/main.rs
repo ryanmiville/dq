@@ -50,6 +50,9 @@ enum Command {
         expr: Option<String>,
     },
 
+    /// Print the compiled query plan as SQL without executing it
+    Sql,
+
     /// Project columns from planned input using a SQL SELECT expression
     ///
     /// The expression is appended to the query plan as SELECT <columns>.
@@ -111,10 +114,10 @@ fn main() {
 fn run() -> Result<()> {
     let cli = Cli::parse();
     let conn = open_connection()?;
-
     match cli.command {
         Command::From { format, expr } => cmd::from(&conn, &InputFormat::parse(format, expr)),
         Command::To { format, expr } => cmd::to(&conn, &OutputFormat::parse(format, expr)),
+        Command::Sql => cmd::sql(),
         Command::Select { columns } => cmd::select(&conn, &columns),
         Command::Where { clause } => cmd::where_clause(&conn, &clause),
         Command::Limit { count } => cmd::limit(&conn, &count),

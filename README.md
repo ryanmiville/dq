@@ -2,7 +2,7 @@
 
 Shell-first data pipelines powered by DuckDB.
 
-Compose `from`, `select`, `where`, `order-by`, `limit`, `describe`, `summarize`, and `to` in Unix pipes. Intermediate stages exchange a private framed query plan followed by the original raw input stream. `dq to ...` executes the accumulated plan and writes results.
+Compose `from`, `select`, `where`, `order-by`, `limit`, `describe`, `summarize`, and `to` in Unix pipes. Intermediate stages exchange a private framed query plan followed by the original raw input stream. `dq to ...` executes the accumulated plan and writes results, while `dq sql` prints the compiled query without executing it.
 
 ```bash
 printf '{"name":"Ada","age":37}\n{"name":"Linus","age":54}\n' |
@@ -42,6 +42,7 @@ cargo build --release
 
 - `dq from <format-or-path>`
 - `dq to <format-or-path>`
+- `dq sql`
 - `dq select <columns>`
 - `dq where <clause>`
 - `dq limit <count>`
@@ -217,6 +218,23 @@ cat data/input.json |
 ```
 
 Pretty output is display-oriented and may be limited by `DQ_MAX_ROWS`; use `csv` or `json` for lossless export.
+
+### Inspect compiled SQL
+
+End a pipeline with `dq sql` to print its compiled query without executing it:
+
+```bash
+dq from data/input.json |
+  dq where "age >= 40" |
+  dq select "name" |
+  dq sql
+```
+
+```sql
+SELECT name FROM (SELECT * FROM (SELECT * FROM '/absolute/path/data/input.json') AS q WHERE age >= 40) AS q;
+```
+
+This prints the relation query represented by the plan, not the temporary-table and `COPY` statements used by `dq to`. Queries for streamed input reference `/dev/stdin` and require the original data on stdin if executed separately.
 
 ### Raw DuckDB expressions
 
