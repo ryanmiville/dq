@@ -1,6 +1,7 @@
 mod cmd;
 mod format;
 mod plan;
+mod storage;
 mod stream;
 
 use anyhow::Result;
@@ -21,13 +22,13 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Read data from stdin or a file and output a query plan
+    /// Read data from stdin, a file, or S3 and output a query plan
     ///
-    /// Presets: csv, json, json-array. Any other path is treated as a file source.
+    /// Presets: csv, json, json-array. File paths and s3:// URIs are treated as sources.
     /// Use --expr for raw DuckDB read expressions.
     From {
-        /// Input format preset or input file path
-        #[arg(value_name = "FORMAT|PATH", required_unless_present = "expr")]
+        /// Input format preset, input file path, or s3:// URI
+        #[arg(value_name = "FORMAT|PATH|S3_URI", required_unless_present = "expr")]
         format: Option<String>,
 
         /// Raw DuckDB read expression (escape hatch for advanced use)

@@ -7,6 +7,7 @@ use std::{
 use crate::{
     format::{InputFormat, OutputExecution, OutputFormat},
     plan::{Op, Plan},
+    storage,
     stream::{
         duplicate_stdin, finish_stdin_payload, is_broken_pipe, prepare_stdin_payload,
         read_plan_header, write_plan_and_payload,
@@ -26,7 +27,7 @@ pub fn to(format: &OutputFormat) -> Result<()> {
         None
     };
 
-    let execution = open_connection().and_then(|conn| execute_to(&conn, &plan, format));
+    let execution = open_connection(&plan).and_then(|conn| execute_to(&conn, &plan, format));
     finish_stdin_payload(payload_thread);
     match execution {
         Err(error) if is_broken_pipe(&error) => Ok(()),
@@ -70,7 +71,7 @@ fn execute_copy(conn: &Connection, plan: &Plan, destination: &str) -> Result<()>
 pub fn from(format: &InputFormat) -> Result<()> {
     let plan = build_source_plan(format).context("failed to build input plan")?;
     if stdout_is_terminal() {
-        let conn = open_connection()?;
+        let conn = open_connection(&plan)?;
         print_pretty_query(&conn, &plan.compile_sql()).context("failed to read input")
     } else if plan.source.is_stream() {
         write_plan_and_payload(&plan, Some(duplicate_stdin()?), io::stdout().lock())
@@ -147,7 +148,7 @@ fn transform(op: Op, context: &'static str) -> Result<()> {
             drop(input);
             None
         };
-        let execution = open_connection()
+        let execution = open_connection(&plan)
             .and_then(|conn| print_pretty_query(&conn, &plan.compile_sql()))
             .context(context);
         finish_stdin_payload(payload_thread);
@@ -160,8 +161,10 @@ fn transform(op: Op, context: &'static str) -> Result<()> {
     }
 }
 
-fn open_connection() -> Result<Connection> {
-    Connection::open_in_memory().context("failed to open duckdb")
+fn open_connection(plan: &Plan) -> Result<Connection> {
+    let conn = Connection::open_in_memory().context("failed to open duckdb")?;
+    storage::prepare(&conn, plan)?;
+    Ok(conn)
 }
 
 fn print_pretty_query(conn: &Connection, query: &str) -> Result<()> {
@@ -227,6 +230,7 @@ fn stdout_is_terminal() -> bool {
 fn build_source_plan(format: &InputFormat) -> Result<Plan> {
     match format {
         InputFormat::Path(path) => Ok(Plan::from_path(resolve_existing_path(path)?)),
+        InputFormat::S3(uri) => Ok(Plan::from_path(uri)),
         _ => Ok(Plan::from_stream(format.read_fn())),
     }
 }
@@ -279,5 +283,14 @@ mod tests {
             maximum_width_from_env(Some(132), Some(100)),
             DuckboxMaximumWidth::Cells(132)
         );
+    }
+
+    #[test]
+    fn preserves_s3_uri_in_source_plan() {
+        let uri = "s3://bucket/path/data.parquet";
+
+        let plan = build_source_plan(&InputFormat::S3(uri.into())).unwrap();
+
+        assert_eq!(plan, Plan::from_path(uri));
     }
 }
