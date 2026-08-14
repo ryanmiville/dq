@@ -16,7 +16,7 @@ use anyhow::{Context, Result};
 use duckdb::{Connection, DuckboxColorMode, DuckboxMaximumWidth, DuckboxOptions, DuckboxRowLimit};
 use terminal_size::{Width, terminal_size_of};
 
-pub fn to(conn: &Connection, format: &OutputFormat) -> Result<()> {
+pub fn to(format: &OutputFormat) -> Result<()> {
     let mut input = duplicate_stdin()?;
     let plan = read_plan_header(&mut input).context("failed to read input plan")?;
     let payload_thread = if plan.source.is_stream() {
@@ -26,7 +26,7 @@ pub fn to(conn: &Connection, format: &OutputFormat) -> Result<()> {
         None
     };
 
-    let execution = execute_to(conn, &plan, format);
+    let execution = open_connection().and_then(|conn| execute_to(&conn, &plan, format));
     finish_stdin_payload(payload_thread);
     match execution {
         Err(error) if is_broken_pipe(&error) => Ok(()),
@@ -67,10 +67,11 @@ fn execute_copy(conn: &Connection, plan: &Plan, destination: &str) -> Result<()>
     .context("failed to convert plan to output format")
 }
 
-pub fn from(conn: &Connection, format: &InputFormat) -> Result<()> {
+pub fn from(format: &InputFormat) -> Result<()> {
     let plan = build_source_plan(format).context("failed to build input plan")?;
     if stdout_is_terminal() {
-        print_pretty_query(conn, &plan.compile_sql()).context("failed to read input")
+        let conn = open_connection()?;
+        print_pretty_query(&conn, &plan.compile_sql()).context("failed to read input")
     } else if plan.source.is_stream() {
         write_plan_and_payload(&plan, Some(duplicate_stdin()?), io::stdout().lock())
             .context("failed to read input")
@@ -80,9 +81,8 @@ pub fn from(conn: &Connection, format: &InputFormat) -> Result<()> {
     }
 }
 
-pub fn select(conn: &Connection, columns: &str) -> Result<()> {
+pub fn select(columns: &str) -> Result<()> {
     transform(
-        conn,
         Op::Select {
             columns: columns.to_string(),
         },
@@ -90,9 +90,8 @@ pub fn select(conn: &Connection, columns: &str) -> Result<()> {
     )
 }
 
-pub fn where_clause(conn: &Connection, clause: &str) -> Result<()> {
+pub fn where_clause(clause: &str) -> Result<()> {
     transform(
-        conn,
         Op::Where {
             clause: clause.to_string(),
         },
@@ -100,9 +99,8 @@ pub fn where_clause(conn: &Connection, clause: &str) -> Result<()> {
     )
 }
 
-pub fn limit(conn: &Connection, count: &str) -> Result<()> {
+pub fn limit(count: &str) -> Result<()> {
     transform(
-        conn,
         Op::Limit {
             count: count.to_string(),
         },
@@ -110,9 +108,8 @@ pub fn limit(conn: &Connection, count: &str) -> Result<()> {
     )
 }
 
-pub fn offset(conn: &Connection, count: &str) -> Result<()> {
+pub fn offset(count: &str) -> Result<()> {
     transform(
-        conn,
         Op::Offset {
             count: count.to_string(),
         },
@@ -120,9 +117,8 @@ pub fn offset(conn: &Connection, count: &str) -> Result<()> {
     )
 }
 
-pub fn order_by(conn: &Connection, clause: &str) -> Result<()> {
+pub fn order_by(clause: &str) -> Result<()> {
     transform(
-        conn,
         Op::OrderBy {
             clause: clause.to_string(),
         },
@@ -130,15 +126,15 @@ pub fn order_by(conn: &Connection, clause: &str) -> Result<()> {
     )
 }
 
-pub fn describe(conn: &Connection) -> Result<()> {
-    transform(conn, Op::Describe, "failed to describe input")
+pub fn describe() -> Result<()> {
+    transform(Op::Describe, "failed to describe input")
 }
 
-pub fn summarize(conn: &Connection) -> Result<()> {
-    transform(conn, Op::Summarize, "failed to summarize input")
+pub fn summarize() -> Result<()> {
+    transform(Op::Summarize, "failed to summarize input")
 }
 
-fn transform(conn: &Connection, op: Op, context: &'static str) -> Result<()> {
+fn transform(op: Op, context: &'static str) -> Result<()> {
     let mut input = duplicate_stdin()?;
     let plan = read_plan_header(&mut input)
         .context("failed to read input plan")?
@@ -151,7 +147,9 @@ fn transform(conn: &Connection, op: Op, context: &'static str) -> Result<()> {
             drop(input);
             None
         };
-        let execution = print_pretty_query(conn, &plan.compile_sql()).context(context);
+        let execution = open_connection()
+            .and_then(|conn| print_pretty_query(&conn, &plan.compile_sql()))
+            .context(context);
         finish_stdin_payload(payload_thread);
         match execution {
             Err(error) if is_broken_pipe(&error) => Ok(()),
@@ -160,6 +158,10 @@ fn transform(conn: &Connection, op: Op, context: &'static str) -> Result<()> {
     } else {
         write_plan_and_payload(&plan, Some(input), io::stdout().lock()).context(context)
     }
+}
+
+fn open_connection() -> Result<Connection> {
+    Connection::open_in_memory().context("failed to open duckdb")
 }
 
 fn print_pretty_query(conn: &Connection, query: &str) -> Result<()> {

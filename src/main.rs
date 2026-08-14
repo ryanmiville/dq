@@ -3,9 +3,8 @@ mod format;
 mod plan;
 mod stream;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::{Parser, Subcommand};
-use duckdb::Connection;
 use format::{InputFormat, OutputFormat};
 
 /// Shell-first data pipelines powered by DuckDB.
@@ -113,21 +112,16 @@ fn main() {
 
 fn run() -> Result<()> {
     let cli = Cli::parse();
-    let conn = open_connection()?;
     match cli.command {
-        Command::From { format, expr } => cmd::from(&conn, &InputFormat::parse(format, expr)),
-        Command::To { format, expr } => cmd::to(&conn, &OutputFormat::parse(format, expr)),
+        Command::From { format, expr } => cmd::from(&InputFormat::parse(format, expr)),
+        Command::To { format, expr } => cmd::to(&OutputFormat::parse(format, expr)),
         Command::Sql => cmd::sql(),
-        Command::Select { columns } => cmd::select(&conn, &columns),
-        Command::Where { clause } => cmd::where_clause(&conn, &clause),
-        Command::Limit { count } => cmd::limit(&conn, &count),
-        Command::Offset { count } => cmd::offset(&conn, &count),
-        Command::OrderBy { clause } => cmd::order_by(&conn, &clause),
-        Command::Describe => cmd::describe(&conn),
-        Command::Summarize => cmd::summarize(&conn),
+        Command::Select { columns } => cmd::select(&columns),
+        Command::Where { clause } => cmd::where_clause(&clause),
+        Command::Limit { count } => cmd::limit(&count),
+        Command::Offset { count } => cmd::offset(&count),
+        Command::OrderBy { clause } => cmd::order_by(&clause),
+        Command::Describe => cmd::describe(),
+        Command::Summarize => cmd::summarize(),
     }
-}
-
-fn open_connection() -> Result<Connection> {
-    Connection::open_in_memory().context("failed to open duckdb")
 }
