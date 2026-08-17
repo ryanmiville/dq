@@ -132,6 +132,33 @@ fn large_payload_crosses_buffer_boundaries_without_corruption() {
 }
 
 #[test]
+fn sql_sink_drains_large_stream_payload() {
+    let input_path = unique_temp_path("dq-sql-drain", "json");
+    let mut input = String::new();
+    for index in 0..100_000 {
+        input.push_str(&format!("{{\"index\":{index}}}\n"));
+    }
+    fs::write(&input_path, input).unwrap();
+
+    let output = common::run(format!(
+        "{} from json < {} | {} sql > /dev/null",
+        common::dq(),
+        shell_quote(&input_path),
+        common::dq()
+    ))
+    .output()
+    .unwrap();
+    fs::remove_file(&input_path).unwrap();
+
+    assert_success(&output, "sql pipeline");
+    assert!(
+        output.stderr.is_empty(),
+        "unexpected stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn early_downstream_close_is_normal_pipeline_completion() {
     let input_path = unique_temp_path("dq-early-close", "json");
     let mut input = String::new();

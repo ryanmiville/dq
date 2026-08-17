@@ -6,6 +6,7 @@ pub enum InputFormat {
     Json,
     JsonArray,
     Path(String),
+    S3(String),
     Passthrough(String),
 }
 
@@ -38,6 +39,7 @@ impl InputFormat {
             "csv" => Self::Csv,
             "json" => Self::Json,
             "json-array" => Self::JsonArray,
+            _ if is_s3_uri(&value) => Self::S3(value),
             _ if file_like(&value) => Self::Path(value),
             _ => Self::Passthrough(value),
         }
@@ -47,7 +49,7 @@ impl InputFormat {
         match self {
             Self::Json | Self::JsonArray => "read_json_auto('/dev/stdin')".to_string(),
             Self::Csv => "read_csv('/dev/stdin')".to_string(),
-            Self::Path(path) => sql_string_literal(path),
+            Self::Path(path) | Self::S3(path) => sql_string_literal(path),
             Self::Passthrough(text) => text.clone(),
         }
     }
@@ -91,6 +93,10 @@ impl OutputFormat {
     }
 }
 
+fn is_s3_uri(value: &str) -> bool {
+    value.starts_with("s3://")
+}
+
 fn file_like(value: &str) -> bool {
     Path::new(value).extension().is_some()
 }
@@ -130,6 +136,18 @@ mod tests {
         assert_eq!(
             OutputFormat::parse_arg("out.csv".into()),
             OutputFormat::Path("out.csv".into())
+        );
+    }
+
+    #[test]
+    fn parses_s3_uris_with_or_without_file_extensions() {
+        assert_eq!(
+            InputFormat::parse_arg("s3://bucket/data.parquet".into()),
+            InputFormat::S3("s3://bucket/data.parquet".into())
+        );
+        assert_eq!(
+            InputFormat::parse_arg("s3://bucket/dataset".into()),
+            InputFormat::S3("s3://bucket/dataset".into())
         );
     }
 

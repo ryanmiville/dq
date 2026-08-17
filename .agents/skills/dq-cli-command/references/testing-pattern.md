@@ -1,73 +1,28 @@
-# Testing pattern
+# Command testing pattern
 
-Use TOML fixtures in `tests/test_cases/`. Do not add bespoke in-process tests for CLI behavior.
+## Choose the test layer
 
-## Fixture shapes
+- **CLI behavior:** add cases to the nearest TOML fixture in `tests/test_cases/`. The harness launches the real binary through `bash -o pipefail -c`; exercise command behavior through that real-process path.
+- **Plan behavior:** add focused `src/plan.rs` unit tests for serialization, SQL lowering, nesting, or operation order.
+- **Transport behavior:** add `src/stream.rs` unit tests or `tests/stream_transport.rs` integration tests for framing, binary payload preservation, endpoint handoff or draining, large streams, and broken pipes. Construct command input through upstream `dq` stages; use transport tests when manual binary frames are required.
 
-### End-to-end transform fixture
+Complete test selection when every changed externally visible branch and every new internal invariant has a layer.
 
-Start from `tests/test_cases/select.toml`, `where_clause.toml`, `limit.toml`, or `order_by.toml`.
+## Fixture workflow
 
-```toml
-cmd = "{dq} from json | {dq} <command> \"...\" | {dq} to json"
+1. Copy the nearest fixture shape and keep its end-to-end pipeline through `from`, the command under test, and an endpoint such as `to` or `sql`.
+2. Cover nominal behavior plus any edge or failure behavior introduced by the command. Derive empty-input expectations from the current pipeline and assert the observed result.
+3. Use `kind = "exact"` for expected stdout, `kind = "same"` for normalized stdout-versus-input comparison, and `kind = "stderr_contains"` with `success = false` for an expected failure.
+4. When adding a new fixture file, run `touch tests/fixtures.rs` so the directory-enumerating proc macro discovers it in incremental builds.
 
-[[cases]]
-name = "example"
-input = """
-{"name":"Ada","age":37}
-"""
-[cases.expect]
-kind = "exact"
-stdout = """
-...
-"""
+The harness normalizes CRLF and per-line indentation/trailing whitespace; it does not perform arbitrary whitespace normalization.
+
+## Validation
+
+Generated fixture test names combine the fixture stem and case name. Run the narrowest matching case first:
+
+```bash
+cargo test --test fixtures <fixture_stem>_<case_name>
 ```
 
-### Direct plan-input fixture
-
-Useful for sink or compiler behavior.
-
-```toml
-cmd = "{dq} to json"
-
-[[cases]]
-name = "example"
-input = """
-{"version":1,"source_path":"tests/data/people.json","ops":[...]}
-"""
-[cases.expect]
-kind = "exact"
-stdout = """
-...
-"""
-```
-
-## Common cases
-
-For a transform command, usually include:
-
-- nominal single-row or small multi-row success
-- edge case with zero matching rows or changed shape, if applicable
-- empty stdin case with the actual lazy-pipeline behavior
-
-Do not assume the old Arrow-era `IO Error`. Under the plan pipeline, empty `from json` input often yields a `json` column of type `JSON`, so later commands may fail with binder errors instead.
-
-## Expectations
-
-- Use `kind = "exact"` for expected output text
-- Use `kind = "same"` only when output should equal input exactly
-- Use `kind = "stderr_contains"` for failure cases
-
-## Harness behavior to remember
-
-- Runner executes `bash -o pipefail -c`
-- Output is normalized for whitespace and CRLF
-- `{dq}` expands to the built test binary
-- Unknown fields and duplicate case names are rejected by fixture parsing/codegen
-
-## Validation flow
-
-1. Run the most targeted fixture test you can
-2. If fixture parsing fails, inspect compile-time errors first
-3. If command output differs, compare normalized expected vs actual output
-4. Finish with `cargo test`
+Finish with `make check`.

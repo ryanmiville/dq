@@ -73,7 +73,7 @@ impl Plan {
         self.compile_from(base_query(&self.source))
     }
 
-    pub fn compile_sql_from_table(&self, table: &str) -> String {
+    pub(crate) fn compile_sql_from_table(&self, table: &str) -> String {
         self.compile_from(format!("SELECT * FROM {table}"))
     }
 

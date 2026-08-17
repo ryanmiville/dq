@@ -1,11 +1,11 @@
 mod cmd;
 mod format;
 mod plan;
+mod storage;
 mod stream;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::{Parser, Subcommand};
-use duckdb::Connection;
 use format::{InputFormat, OutputFormat};
 
 /// Shell-first data pipelines powered by DuckDB.
@@ -22,13 +22,13 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Read data from stdin or a file and output a query plan
+    /// Read data from stdin, a file, or S3 and output a query plan
     ///
-    /// Presets: csv, json, json-array. Any other path is treated as a file source.
+    /// Presets: csv, json, json-array. File paths and s3:// URIs are treated as sources.
     /// Use --expr for raw DuckDB read expressions.
     From {
-        /// Input format preset or input file path
-        #[arg(value_name = "FORMAT|PATH", required_unless_present = "expr")]
+        /// Input format preset, input file path, or s3:// URI
+        #[arg(value_name = "FORMAT|PATH|S3_URI", required_unless_present = "expr")]
         format: Option<String>,
 
         /// Raw DuckDB read expression (escape hatch for advanced use)
@@ -49,6 +49,9 @@ enum Command {
         #[arg(long, value_name = "COPY_EXPR", conflicts_with = "format")]
         expr: Option<String>,
     },
+
+    /// Print the compiled query plan as SQL without executing it
+    Sql,
 
     /// Project columns from planned input using a SQL SELECT expression
     ///
@@ -110,21 +113,16 @@ fn main() {
 
 fn run() -> Result<()> {
     let cli = Cli::parse();
-    let conn = open_connection()?;
-
     match cli.command {
-        Command::From { format, expr } => cmd::from(&conn, &InputFormat::parse(format, expr)),
-        Command::To { format, expr } => cmd::to(&conn, &OutputFormat::parse(format, expr)),
-        Command::Select { columns } => cmd::select(&conn, &columns),
-        Command::Where { clause } => cmd::where_clause(&conn, &clause),
-        Command::Limit { count } => cmd::limit(&conn, &count),
-        Command::Offset { count } => cmd::offset(&conn, &count),
-        Command::OrderBy { clause } => cmd::order_by(&conn, &clause),
-        Command::Describe => cmd::describe(&conn),
-        Command::Summarize => cmd::summarize(&conn),
+        Command::From { format, expr } => cmd::from(&InputFormat::parse(format, expr)),
+        Command::To { format, expr } => cmd::to(&OutputFormat::parse(format, expr)),
+        Command::Sql => cmd::sql(),
+        Command::Select { columns } => cmd::select(&columns),
+        Command::Where { clause } => cmd::where_clause(&clause),
+        Command::Limit { count } => cmd::limit(&count),
+        Command::Offset { count } => cmd::offset(&count),
+        Command::OrderBy { clause } => cmd::order_by(&clause),
+        Command::Describe => cmd::describe(),
+        Command::Summarize => cmd::summarize(),
     }
-}
-
-fn open_connection() -> Result<Connection> {
-    Connection::open_in_memory().context("failed to open duckdb")
 }

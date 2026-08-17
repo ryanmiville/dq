@@ -2,7 +2,7 @@
 
 Shell-first data pipelines powered by DuckDB.
 
-Compose `from`, `select`, `where`, `order-by`, `limit`, `describe`, `summarize`, and `to` in Unix pipes. Intermediate stages exchange a private framed query plan followed by the original raw input stream. `dq to ...` executes the accumulated plan and writes results.
+Compose `from`, `select`, `where`, `order-by`, `limit`, `describe`, `summarize`, and `to` in Unix pipes. Intermediate stages exchange a private framed query plan followed by the original raw input stream. `dq to ...` executes the accumulated plan and writes results, while `dq sql` prints the compiled query without executing it.
 
 ```bash
 printf '{"name":"Ada","age":37}\n{"name":"Linus","age":54}\n' |
@@ -42,6 +42,7 @@ cargo build --release
 
 - `dq from <format-or-path>`
 - `dq to <format-or-path>`
+- `dq sql`
 - `dq select <columns>`
 - `dq where <clause>`
 - `dq limit <count>`
@@ -58,7 +59,7 @@ cargo build --release
 - `json`
 - `json-array`
 
-`from` and `to` also accept file paths directly, so you can point at files without wrapping them in SQL quotes.
+`from` and `to` also accept file paths directly, so you can point at files without wrapping them in SQL quotes, and `from` accepts `s3://` URIs for authenticated S3 reads.
 
 ## Examples
 
@@ -205,6 +206,25 @@ dq from data/input.json | dq where "age >= 40" | dq to csv
 dq from data/input.json | dq to data/filtered.csv
 ```
 
+### Read from S3
+
+Use an `s3://` URI anywhere you would use a local input path:
+
+```bash
+export AWS_PROFILE=production
+dq from s3://my-bucket/path/data.parquet |
+  dq where "created_at >= DATE '2026-01-01'" |
+  dq to json
+```
+
+DQ uses DuckDB's AWS credential chain, so credentials from environment variables, AWS config profiles, SSO sessions, web identity, and instance metadata are supported; for SSO, run `aws sso login --profile <profile>` first.
+
+On the first executed S3 query, DQ installs DuckDB's `httpfs` extension and, when it must create a credential-chain secret, the `aws` extension in DuckDB's user extension directory; later invocations reuse those installed files while loading them into each new in-memory connection.
+
+DQ uses a matching DuckDB S3 secret when one is available; otherwise it creates a temporary credential-chain secret that lasts only for the current in-memory connection and does not persist credentials to disk.
+
+Because the final pipeline process executes the query, export AWS settings for the whole pipeline instead of assigning them only to `dq from`; for example, use `export AWS_PROFILE=production` rather than `AWS_PROFILE=production dq from ... | dq to ...`.
+
 ### Pretty table output
 
 Use `to pretty` to request the same Duckbox table used for terminal auto-display, including when stdout is redirected:
@@ -217,6 +237,23 @@ cat data/input.json |
 ```
 
 Pretty output is display-oriented and may be limited by `DQ_MAX_ROWS`; use `csv` or `json` for lossless export.
+
+### Inspect compiled SQL
+
+End a pipeline with `dq sql` to print its compiled query without executing it:
+
+```bash
+dq from data/input.json |
+  dq where "age >= 40" |
+  dq select "name" |
+  dq sql
+```
+
+```sql
+SELECT name FROM (SELECT * FROM (SELECT * FROM '/absolute/path/data/input.json') AS q WHERE age >= 40) AS q;
+```
+
+This prints the relation query represented by the plan, not the temporary-table and `COPY` statements used by `dq to`. Queries for streamed input reference `/dev/stdin` and require the original data on stdin if executed separately.
 
 ### Raw DuckDB expressions
 
@@ -263,5 +300,6 @@ These settings apply to both terminal auto-display and `dq to pretty`.
 
 - Intermediate pipeline stages exchange a private framed plan and stream non-path input bytes unchanged.
 - `dq to ...` executes the full accumulated plan in DuckDB and parses streamed input at the endpoint.
-- File inputs remain path references; `dq` does not copy or delete user-owned source files.
+- Local file and S3 inputs remain deferred references in the query plan; S3 extensions and credentials are initialized only by the process that executes the plan.
+- `dq sql` prints S3 plans without installing extensions, loading credentials, or accessing the network.
 - `select`/`where` args are interpolated into SQL — keep inputs trusted.
