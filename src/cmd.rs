@@ -56,16 +56,33 @@ fn execute_to(conn: &Connection, plan: &Plan, format: &OutputFormat) -> Result<(
 }
 
 fn execute_copy(conn: &Connection, plan: &Plan, destination: &str) -> Result<()> {
+    conn.execute_batch(&copy_query(plan, destination))
+        .context("failed to convert plan to output format")
+}
+
+fn copy_query(plan: &Plan, destination: &str) -> String {
+    if plan.source.is_stream() && plan.ops.iter().any(|op| matches!(op, Op::Summarize)) {
+        return stream_summarize_copy_query(plan, destination);
+    }
+
+    format!(
+        "CREATE TEMP TABLE dq_result AS {}; COPY dq_result TO {destination};",
+        plan.compile_sql()
+    )
+}
+
+fn stream_summarize_copy_query(plan: &Plan, destination: &str) -> String {
+    // DuckDB binds SUMMARIZE twice under CTAS. A non-seekable source is exhausted by
+    // the first bind, so preserve the existing stream behavior for this one case.
     let source_query = Plan {
         ops: Vec::new(),
         ..plan.clone()
     }
     .compile_sql();
-    let query = plan.compile_sql_from_table("dq_source");
-    conn.execute_batch(&format!(
-        "CREATE TEMP TABLE dq_source AS {source_query}; CREATE TEMP TABLE dq_result AS {query}; COPY dq_result TO {destination};"
-    ))
-    .context("failed to convert plan to output format")
+    let result_query = plan.compile_sql_from_table("dq_input");
+    format!(
+        "CREATE TEMP TABLE dq_input AS {source_query}; CREATE TEMP TABLE dq_result AS {result_query}; COPY dq_result TO {destination};"
+    )
 }
 
 pub fn from(format: &InputFormat) -> Result<()> {
@@ -244,6 +261,79 @@ fn resolve_existing_path(path: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+
+    use tempfile::tempdir;
+
+    #[test]
+    fn copy_materializes_the_complete_plan_without_a_source_table() {
+        let plan = Plan::from_path("/tmp/input.parquet")
+            .with_op(Op::Where {
+                clause: "age > 40".to_string(),
+            })
+            .with_op(Op::Select {
+                columns: "name".to_string(),
+            });
+
+        let query = copy_query(&plan, "'/dev/stdout' (FORMAT CSV)");
+
+        assert_eq!(
+            query,
+            format!(
+                "CREATE TEMP TABLE dq_result AS {}; COPY dq_result TO '/dev/stdout' (FORMAT CSV);",
+                plan.compile_sql()
+            )
+        );
+        assert!(!query.contains("dq_source"));
+    }
+
+    #[test]
+    fn complete_plan_preserves_parquet_partition_and_projection_pushdown() {
+        let temp = tempdir().unwrap();
+        let first_dir = temp.path().join("date=2026-08-16");
+        let second_dir = temp.path().join("date=2026-08-17");
+        fs::create_dir_all(&first_dir).unwrap();
+        fs::create_dir_all(&second_dir).unwrap();
+
+        let conn = Connection::open_in_memory().unwrap();
+        for (path, value) in [
+            (first_dir.join("part.parquet"), 1),
+            (second_dir.join("part.parquet"), 2),
+        ] {
+            conn.execute_batch(&format!(
+                "COPY (SELECT {value} AS projected, {value} * 10 AS unprojected) TO '{}' (FORMAT PARQUET);",
+                path.to_string_lossy().replace('\'', "''")
+            ))
+            .unwrap();
+        }
+
+        let glob = temp.path().join("date=*/part.parquet");
+        let plan = Plan::from_path(glob.to_string_lossy())
+            .with_op(Op::Where {
+                clause: "date = DATE '2026-08-17'".to_string(),
+            })
+            .with_op(Op::Select {
+                columns: "projected".to_string(),
+            });
+        let mut statement = conn
+            .prepare(&format!("EXPLAIN {}", plan.compile_sql()))
+            .unwrap();
+        let physical_plan = statement
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<duckdb::Result<Vec<_>>>()
+            .unwrap()
+            .join("\n");
+
+        assert!(physical_plan.contains("File Filters:"), "{physical_plan}");
+        assert!(
+            physical_plan.contains("Scanning Files: 1/2"),
+            "{physical_plan}"
+        );
+        assert!(physical_plan.contains("Projections:"), "{physical_plan}");
+        assert!(physical_plan.contains("projected"), "{physical_plan}");
+        assert!(!physical_plan.contains("unprojected"), "{physical_plan}");
+    }
 
     #[test]
     fn default_duckbox_width_caps_large_terminals() {
