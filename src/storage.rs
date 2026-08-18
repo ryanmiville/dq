@@ -1,9 +1,11 @@
-use std::process;
+use std::{env, process};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use duckdb::Connection;
 
 use crate::plan::{Plan, Source};
+
+const CA_CERT_FILE_ENV: &str = "DQ_CA_CERT_FILE";
 
 pub fn prepare(conn: &Connection, plan: &Plan) -> Result<()> {
     let Some(uri) = s3_uri(&plan.source) else {
@@ -11,21 +13,46 @@ pub fn prepare(conn: &Connection, plan: &Plan) -> Result<()> {
     };
 
     load_or_install(conn, "httpfs")?;
+    configure_ca_cert_file(conn)?;
 
     if !has_matching_s3_secret(conn, uri)? {
         load_or_install(conn, "aws")?;
         let secret_name = format!("dq_s3_{}", process::id());
-        conn.execute_batch(&format!(
-            "CREATE TEMPORARY SECRET {secret_name} (\
-                TYPE s3, \
-                PROVIDER credential_chain, \
-                VALIDATION 'exists'\
-            );"
-        ))
-        .context("failed to load AWS credentials for S3")?;
+        conn.execute_batch(&credential_chain_secret_sql(&secret_name))
+            .context("failed to configure S3 access")?;
     }
 
     Ok(())
+}
+
+fn credential_chain_secret_sql(secret_name: &str) -> String {
+    // Without eager validation, an empty chain remains anonymous while any
+    // credentials found by the chain are still used to sign private requests.
+    format!(
+        "CREATE TEMPORARY SECRET {secret_name} (\
+            TYPE s3, \
+            PROVIDER credential_chain, \
+            VALIDATION 'none', \
+            REFRESH auto\
+        );"
+    )
+}
+
+fn configure_ca_cert_file(conn: &Connection) -> Result<()> {
+    let path = match env::var(CA_CERT_FILE_ENV) {
+        Ok(path) => path,
+        Err(env::VarError::NotPresent) => return Ok(()),
+        Err(env::VarError::NotUnicode(_)) => {
+            return Err(anyhow!("{CA_CERT_FILE_ENV} path is not valid UTF-8"));
+        }
+    };
+
+    conn.execute_batch(&ca_cert_file_sql(&path))
+        .with_context(|| format!("failed to configure {CA_CERT_FILE_ENV} for S3"))
+}
+
+fn ca_cert_file_sql(path: &str) -> String {
+    format!("SET ca_cert_file = '{}';", path.replace('\'', "''"))
 }
 
 fn s3_uri(source: &Source) -> Option<&str> {
@@ -61,8 +88,24 @@ fn has_matching_s3_secret(conn: &Connection, uri: &str) -> Result<bool> {
 
 #[cfg(test)]
 mod tests {
-    use super::s3_uri;
+    use super::{ca_cert_file_sql, credential_chain_secret_sql, s3_uri};
     use crate::plan::{Plan, Source};
+
+    #[test]
+    fn s3_credentials_are_optional() {
+        let sql = credential_chain_secret_sql("dq_test");
+
+        assert!(sql.contains("VALIDATION 'none'"));
+        assert!(sql.contains("REFRESH auto"));
+    }
+
+    #[test]
+    fn escapes_ca_bundle_paths_for_duckdb() {
+        assert_eq!(
+            ca_cert_file_sql("/tmp/company's-ca.pem"),
+            "SET ca_cert_file = '/tmp/company''s-ca.pem';"
+        );
+    }
 
     #[test]
     fn identifies_s3_plan_sources() {

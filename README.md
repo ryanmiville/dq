@@ -59,7 +59,7 @@ cargo build --release
 - `json`
 - `json-array`
 
-`from` and `to` also accept file paths directly, so you can point at files without wrapping them in SQL quotes, and `from` accepts `s3://` URIs for authenticated S3 reads.
+`from` and `to` also accept file paths directly, so you can point at files without wrapping them in SQL quotes, and `from` accepts `s3://` URIs for public or authenticated S3 reads.
 
 ## Examples
 
@@ -208,7 +208,15 @@ dq from data/input.json | dq to data/filtered.csv
 
 ### Read from S3
 
-Use an `s3://` URI anywhere you would use a local input path:
+Use an `s3://` URI anywhere you would use a local input path. Public objects work without AWS credentials:
+
+```bash
+dq from s3://noaa-ghcn-pds/csv/by_year/1763.csv |
+  dq limit 5 |
+  dq to json
+```
+
+For private objects, make credentials available through the AWS credential chain:
 
 ```bash
 export AWS_PROFILE=production
@@ -217,7 +225,13 @@ dq from s3://my-bucket/path/data.parquet |
   dq to json
 ```
 
-DQ uses DuckDB's AWS credential chain, so credentials from environment variables, AWS config profiles, SSO sessions, web identity, and instance metadata are supported; for SSO, run `aws sso login --profile <profile>` first.
+DQ uses DuckDB's AWS credential chain, so credentials from environment variables, AWS config profiles, SSO sessions, web identity, and instance metadata are supported; for SSO, run `aws sso login --profile <profile>` first. When the chain finds credentials, DuckDB signs S3 requests with them; when it does not, DuckDB makes anonymous requests suitable for public objects.
+
+For S3 connections that require a custom certificate authority, set `DQ_CA_CERT_FILE` to the CA bundle path. For example, environments that already provide an AWS-specific bundle can opt into using it with DQ:
+
+```bash
+export DQ_CA_CERT_FILE="$AWS_CA_BUNDLE"
+```
 
 On the first executed S3 query, DQ installs DuckDB's `httpfs` extension and, when it must create a credential-chain secret, the `aws` extension in DuckDB's user extension directory; later invocations reuse those installed files while loading them into each new in-memory connection.
 
