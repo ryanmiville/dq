@@ -93,107 +93,15 @@ jobs:
           git push origin main
           git push origin "v${{ needs.validate.outputs.version }}"
 
-  build:
-    needs: prepare
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            target: x86_64-apple-darwin
-          - os: macos-latest
-            target: aarch64-apple-darwin
-          - os: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-          - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-
-    runs-on: ${{ matrix.os }}
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: v${{ needs.prepare.outputs.version }}
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: release-v1-${{ runner.os }}-${{ matrix.target }}
-          add-job-id-key: "false"
-          add-rust-environment-hash-key: "false"
-
-      - name: Install cross
-        if: matrix.cross
-        uses: taiki-e/install-action@cross
-
-      - name: Build (cross)
-        if: matrix.cross
-        run: cross build --release --target ${{ matrix.target }}
-        env:
-          RUSTFLAGS: "-C strip=symbols"
-          CXXFLAGS: "-O2"
-
-      - name: Build (native)
-        if: "!matrix.cross"
-        run: cargo build --release --target ${{ matrix.target }}
-        env:
-          RUSTFLAGS: "-C strip=symbols"
-
-      - name: Prepare artifact
-        run: |
-          mkdir -p dist
-          cp target/${{ matrix.target }}/release/dq dist/
-          chmod +x dist/dq
-
-      - name: Sign binary (macOS)
-        if: runner.os == 'macOS'
-        run: codesign --force --sign - dist/dq
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.target }}
-          path: dist/
-          if-no-files-found: error
-
   release:
-    needs: [prepare, build]
+    needs: prepare
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: v${{ needs.prepare.outputs.version }}
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Create release archives
-        run: |
-          mkdir -p release
-          for platform in artifacts/*/; do
-            name=$(basename "$platform")
-            (cd "$platform" && tar -czvf "../../release/dq-${name}.tar.gz" .)
-          done
-
-      - name: Generate checksums
-        run: |
-          cd release
-          sha256sum * > checksums-sha256.txt
-          cat checksums-sha256.txt
-
-      - name: Create GitHub Release
+      - name: Create source release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.prepare.outputs.version }}
-          files: release/*
           generate_release_notes: true
 
   homebrew:
@@ -201,11 +109,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Get tarball SHA256
+      - name: Get source tarball SHA256
         id: sha
         run: |
-          sha=$(curl -sL https://github.com/ryanmiville/dq/archive/refs/tags/v${{ needs.prepare.outputs.version }}.tar.gz | shasum -a 256 | cut -d' ' -f1)
-          echo "sha256=$sha" >> $GITHUB_OUTPUT
+          url="https://github.com/ryanmiville/dq/archive/refs/tags/v${{ needs.prepare.outputs.version }}.tar.gz"
+          sha=$(curl --fail --silent --show-error --location "$url" | sha256sum | cut -d' ' -f1)
+          echo "sha256=$sha" >> "$GITHUB_OUTPUT"
 
       - name: Checkout homebrew-tap
         uses: actions/checkout@v4
@@ -214,17 +123,60 @@ jobs:
           token: ${{ secrets.TAP_GITHUB_TOKEN }}
 
       - name: Update formula
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          SHA256: ${{ steps.sha.outputs.sha256 }}
         run: |
-          sed -i 's|url ".*"|url "https://github.com/ryanmiville/dq/archive/refs/tags/v${{ needs.prepare.outputs.version }}.tar.gz"|' Formula/dq.rb
-          sed -i 's|sha256 ".*"|sha256 "${{ steps.sha.outputs.sha256 }}"|' Formula/dq.rb
+          python3 <<'PY'
+          import os
+          import re
+          from pathlib import Path
 
-      - name: Create PR
+          formula = Path("Formula/dq.rb")
+          contents = formula.read_text()
+
+          # A bottle is specific to one formula version. Remove the previous
+          # version's metadata; brew pr-pull adds the newly built bottle block.
+          contents, bottle_count = re.subn(
+              r"\n  bottle do\n.*?\n  end\n",
+              "\n",
+              contents,
+              count=1,
+              flags=re.DOTALL,
+          )
+
+          url = (
+              "https://github.com/ryanmiville/dq/archive/refs/tags/"
+              f"v{os.environ['VERSION']}.tar.gz"
+          )
+          source = re.compile(
+              r'^  url "https://github\.com/ryanmiville/dq/[^\n]+"\n'
+              r'  sha256 "[0-9a-f]{64}"$',
+              flags=re.MULTILINE,
+          )
+          contents, source_count = source.subn(
+              f'  url "{url}"\n  sha256 "{os.environ["SHA256"]}"',
+              contents,
+              count=1,
+          )
+          if source_count != 1:
+              raise SystemExit("could not uniquely update the dq source URL and SHA256")
+
+          formula.write_text(contents)
+          print(f"updated source; removed {bottle_count} previous bottle block(s)")
+          PY
+
+      - name: Create bottle PR
+        id: create-pr
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.TAP_GITHUB_TOKEN }}
           commit-message: "Update dq to v${{ needs.prepare.outputs.version }}"
           title: "Update dq to v${{ needs.prepare.outputs.version }}"
-          body: "Automated update from [dq release](https://github.com/ryanmiville/dq/releases/tag/v${{ needs.prepare.outputs.version }})"
+          body: |
+            Automated update from [dq v${{ needs.prepare.outputs.version }}](https://github.com/ryanmiville/dq/releases/tag/v${{ needs.prepare.outputs.version }}).
+
+            The tap's `brew test-bot` workflow builds the Homebrew bottles for this PR. After its checks pass, publish it with the tap's `brew pr-pull` workflow, using this PR number and head SHA.
           branch: update-dq-${{ needs.prepare.outputs.version }}
           base: main
 
@@ -235,10 +187,18 @@ jobs:
 
     steps:
       - name: Summary
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_RESULT: ${{ needs.release.result }}
+          HOMEBREW_RESULT: ${{ needs.homebrew.result }}
         run: |
-          echo "## Release v${{ needs.prepare.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| GitHub Release | ${{ needs.release.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Homebrew | ${{ needs.homebrew.result }} |" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## Release v${VERSION}"
+            echo ""
+            echo "| Component | Status |"
+            echo "|-----------|--------|"
+            echo "| GitHub source release | ${RELEASE_RESULT} |"
+            echo "| Homebrew bottle PR | ${HOMEBREW_RESULT} |"
+            echo ""
+            echo "The Homebrew tap builds and publishes the installable bottles; dq no longer builds duplicate standalone release archives."
+          } >> "$GITHUB_STEP_SUMMARY"
