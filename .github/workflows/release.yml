@@ -107,6 +107,9 @@ jobs:
   homebrew:
     needs: [prepare, release]
     runs-on: ubuntu-latest
+    outputs:
+      pull_request: ${{ steps.create-pr.outputs.pull-request-number }}
+      head_sha: ${{ steps.create-pr.outputs.pull-request-head-sha }}
 
     steps:
       - name: Get source tarball SHA256
@@ -176,12 +179,140 @@ jobs:
           body: |
             Automated update from [dq v${{ needs.prepare.outputs.version }}](https://github.com/ryanmiville/dq/releases/tag/v${{ needs.prepare.outputs.version }}).
 
-            The tap's `brew test-bot` workflow builds the Homebrew bottles for this PR. After its checks pass, publish it with the tap's `brew pr-pull` workflow, using this PR number and head SHA.
+            The tap's `brew test-bot` workflow builds the Homebrew bottles for this PR. The dq release workflow will publish the bottles and close this PR after all bottle builds pass; do not merge it manually.
           branch: update-dq-${{ needs.prepare.outputs.version }}
           base: main
+          draft: true
+
+  # TAP_GITHUB_TOKEN needs Actions, Contents, and Pull requests read/write
+  # access to ryanmiville/homebrew-tap.
+  publish-homebrew:
+    needs: [prepare, homebrew]
+    if: ${{ needs.homebrew.outputs.pull_request != '' && needs.homebrew.outputs.head_sha != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      bottle-builds_url: ${{ steps.bottle-builds.outputs.url }}
+      publish_url: ${{ steps.publish.outputs.url }}
+
+    steps:
+      - name: Wait for bottle builds
+        id: bottle-builds
+        env:
+          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+          HEAD_SHA: ${{ needs.homebrew.outputs.head_sha }}
+        run: |
+          for attempt in $(seq 1 180); do
+            run=$(gh api --method GET \
+              repos/ryanmiville/homebrew-tap/actions/workflows/tests.yml/runs \
+              -f event=pull_request \
+              -f head_sha="$HEAD_SHA" \
+              -F per_page=10 \
+              --jq '.workflow_runs[0] // empty')
+
+            if [ -z "$run" ]; then
+              echo "Waiting for the bottle workflow to start ($attempt/180)..."
+              sleep 10
+              continue
+            fi
+
+            status=$(jq -r '.status' <<<"$run")
+            conclusion=$(jq -r '.conclusion // ""' <<<"$run")
+            url=$(jq -r '.html_url' <<<"$run")
+            echo "Bottle workflow: $status ${conclusion:+($conclusion)}"
+
+            if [ "$status" = "completed" ]; then
+              if [ "$conclusion" != "success" ]; then
+                echo "::error::Bottle builds failed: $url"
+                exit 1
+              fi
+
+              run_id=$(jq -r '.id' <<<"$run")
+              artifacts=$(gh api \
+                "repos/ryanmiville/homebrew-tap/actions/runs/${run_id}/artifacts" \
+                --jq '.artifacts[] | select(.expired == false) | .name')
+              for expected in \
+                bottles_macos-15 \
+                bottles_macos-15-intel \
+                bottles_ubuntu-latest; do
+                if ! grep -Fxq "$expected" <<<"$artifacts"; then
+                  echo "::error::Bottle workflow did not produce $expected: $url"
+                  exit 1
+                fi
+              done
+
+              echo "url=$url" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            sleep 10
+          done
+
+          echo "::error::Timed out waiting for bottle builds"
+          exit 1
+
+      - name: Publish bottles
+        id: publish
+        env:
+          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+          HEAD_SHA: ${{ needs.homebrew.outputs.head_sha }}
+          PULL_REQUEST: ${{ needs.homebrew.outputs.pull_request }}
+        run: |
+          dispatched_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          gh workflow run publish.yml \
+            --repo ryanmiville/homebrew-tap \
+            --ref main \
+            -f pull_request="$PULL_REQUEST" \
+            -f head_sha="$HEAD_SHA"
+
+          for attempt in $(seq 1 30); do
+            run=$(gh run list \
+              --repo ryanmiville/homebrew-tap \
+              --workflow publish.yml \
+              --event workflow_dispatch \
+              --limit 20 \
+              --json databaseId,createdAt,url \
+              --jq "map(select(.createdAt >= \"$dispatched_at\"))[0] // empty")
+
+            if [ -n "$run" ]; then
+              run_id=$(jq -r '.databaseId' <<<"$run")
+              url=$(jq -r '.url' <<<"$run")
+              echo "url=$url" >> "$GITHUB_OUTPUT"
+              gh run watch "$run_id" \
+                --repo ryanmiville/homebrew-tap \
+                --exit-status
+              exit 0
+            fi
+
+            echo "Waiting for the publish workflow to start ($attempt/30)..."
+            sleep 5
+          done
+
+          echo "::error::Timed out waiting for the publish workflow to start"
+          exit 1
+
+      - name: Verify published formula and bottles
+        env:
+          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          formula=$(gh api \
+            repos/ryanmiville/homebrew-tap/contents/Formula/dq.rb \
+            -H "Accept: application/vnd.github.raw+json")
+          grep -Fq "/tags/v${VERSION}.tar.gz" <<<"$formula"
+          grep -Fq "  bottle do" <<<"$formula"
+
+          asset_count=$(gh release view "dq-${VERSION}" \
+            --repo ryanmiville/homebrew-tap \
+            --json assets \
+            --jq '.assets | length')
+          if [ "$asset_count" -eq 0 ]; then
+            echo "::error::Homebrew release dq-${VERSION} has no bottle assets"
+            exit 1
+          fi
 
   summary:
-    needs: [prepare, release, homebrew]
+    needs: [prepare, release, homebrew, publish-homebrew]
     runs-on: ubuntu-latest
     if: always()
 
@@ -191,6 +322,9 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
           RELEASE_RESULT: ${{ needs.release.result }}
           HOMEBREW_RESULT: ${{ needs.homebrew.result }}
+          HOMEBREW_PUBLISH_RESULT: ${{ needs.publish-homebrew.result }}
+          BOTTLE_BUILD_URL: ${{ needs.publish-homebrew.outputs.bottle-builds_url }}
+          BOTTLE_PUBLISH_URL: ${{ needs.publish-homebrew.outputs.publish_url }}
         run: |
           {
             echo "## Release v${VERSION}"
@@ -199,6 +333,8 @@ jobs:
             echo "|-----------|--------|"
             echo "| GitHub source release | ${RELEASE_RESULT} |"
             echo "| Homebrew bottle PR | ${HOMEBREW_RESULT} |"
+            echo "| Homebrew bottle publication | ${HOMEBREW_PUBLISH_RESULT} |"
             echo ""
-            echo "The Homebrew tap builds and publishes the installable bottles; dq no longer builds duplicate standalone release archives."
+            [ -z "$BOTTLE_BUILD_URL" ] || echo "Bottle builds: $BOTTLE_BUILD_URL"
+            [ -z "$BOTTLE_PUBLISH_URL" ] || echo "Bottle publication: $BOTTLE_PUBLISH_URL"
           } >> "$GITHUB_STEP_SUMMARY"
