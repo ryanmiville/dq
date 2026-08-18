@@ -139,7 +139,7 @@ jobs:
           # version's metadata; brew pr-pull adds the newly built bottle block.
           contents, bottle_count = re.subn(
               r"\n  bottle do\n.*?\n  end\n",
-              "\n",
+              "",
               contents,
               count=1,
               flags=re.DOTALL,
