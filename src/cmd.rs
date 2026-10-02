@@ -5,9 +5,9 @@ use std::{
 };
 
 use crate::{
-    extensions::{Extension, load_or_install},
-    format::{InputFormat, OutputExecution, OutputFormat, is_yaml_path},
-    plan::{Op, Plan, Source},
+    extensions::{self, Extension, load_or_install},
+    format::{InputFormat, OutputExecution, OutputFormat},
+    plan::{Op, Plan},
     storage,
     stream::{
         duplicate_stdin, finish_stdin_payload, is_broken_pipe, prepare_stdin_payload,
@@ -185,13 +185,7 @@ fn transform(op: Op, context: &'static str) -> Result<()> {
 fn open_connection(plan: &Plan) -> Result<Connection> {
     let conn = Connection::open_in_memory().context("failed to open duckdb")?;
     storage::prepare(&conn, plan)?;
-    let requires_yaml = match &plan.source {
-        Source::Path { path } => is_yaml_path(path),
-        Source::Stream { read_expr } => read_expr == &InputFormat::Yaml.read_fn(),
-    };
-    if requires_yaml {
-        load_or_install(&conn, Extension::Yaml)?;
-    }
+    extensions::prepare(&conn, plan)?;
     Ok(conn)
 }
 

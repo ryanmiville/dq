@@ -1,6 +1,11 @@
 use anyhow::{Context, Result};
 use duckdb::Connection;
 
+use crate::{
+    format::{InputFormat, is_yaml_path},
+    plan::{Plan, Source},
+};
+
 pub enum Extension {
     Httpfs,
     Aws,
@@ -22,6 +27,17 @@ impl Extension {
             Self::Yaml => "INSTALL yaml FROM community;".to_string(),
         }
     }
+}
+
+pub fn prepare(conn: &Connection, plan: &Plan) -> Result<()> {
+    let requires_yaml = match &plan.source {
+        Source::Path { path } => is_yaml_path(path),
+        Source::Stream { read_expr } => read_expr == &InputFormat::Yaml.read_fn(),
+    };
+    if requires_yaml {
+        load_or_install(conn, Extension::Yaml)?;
+    }
+    Ok(())
 }
 
 pub fn load_or_install(conn: &Connection, extension: Extension) -> Result<()> {
