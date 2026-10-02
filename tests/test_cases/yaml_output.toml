@@ -1,0 +1,33 @@
+cmd = "{dq} from json | {dq} to yaml"
+
+[[cases]]
+name = "writes_config_mapping"
+input = '{"name":"api","enabled":true,"server":{"host":"localhost","port":8080},"features":["auth","metrics"]}'
+[cases.expect]
+kind = "exact"
+stdout = '''
+name: api
+enabled: true
+server:
+  host: localhost
+  port: 8080
+features:
+  - auth
+  - metrics
+'''
+
+[[cases]]
+name = "writes_multiple_documents"
+input = '''
+{"name":"Ada","age":37}
+{"name":"Linus","age":54}
+'''
+[cases.expect]
+kind = "exact"
+stdout = '''
+name: Ada
+age: 37
+---
+name: Linus
+age: 54
+'''

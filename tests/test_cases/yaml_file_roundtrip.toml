@@ -1,0 +1,12 @@
+cmd = '''
+temp_dir=$(mktemp -d)
+trap 'rm -rf "$temp_dir"' EXIT
+{dq} from json | {dq} to "$temp_dir/config.yml"
+{dq} from "$temp_dir/config.yml" | {dq} to json
+'''
+
+[[cases]]
+name = "complex_types"
+input = '{"name":"api","enabled":true,"server":{"host":"localhost","port":8080},"features":["auth","metrics"],"optional":null}'
+[cases.expect]
+kind = "same"

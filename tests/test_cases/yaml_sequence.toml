@@ -1,0 +1,8 @@
+cmd = "{dq} from tests/data/people.yml | {dq} where 'age > 40' | {dq} select name | {dq} to json"
+
+[[cases]]
+name = "filters_root_sequence"
+input = ""
+[cases.expect]
+kind = "exact"
+stdout = '{"name":"Linus"}'

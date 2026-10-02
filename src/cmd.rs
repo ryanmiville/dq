@@ -5,8 +5,9 @@ use std::{
 };
 
 use crate::{
-    format::{InputFormat, OutputExecution, OutputFormat},
-    plan::{Op, Plan},
+    extensions::{Extension, load_or_install},
+    format::{InputFormat, OutputExecution, OutputFormat, is_yaml_path},
+    plan::{Op, Plan, Source},
     storage,
     stream::{
         duplicate_stdin, finish_stdin_payload, is_broken_pipe, prepare_stdin_payload,
@@ -49,6 +50,9 @@ pub fn sql() -> Result<()> {
 }
 
 fn execute_to(conn: &Connection, plan: &Plan, format: &OutputFormat) -> Result<()> {
+    if format.requires_yaml() {
+        load_or_install(conn, Extension::Yaml)?;
+    }
     match format.execution() {
         OutputExecution::Copy(destination) => execute_copy(conn, plan, &destination),
         OutputExecution::Pretty => print_pretty_query(conn, &plan.compile_sql()),
@@ -181,6 +185,9 @@ fn transform(op: Op, context: &'static str) -> Result<()> {
 fn open_connection(plan: &Plan) -> Result<Connection> {
     let conn = Connection::open_in_memory().context("failed to open duckdb")?;
     storage::prepare(&conn, plan)?;
+    if matches!(&plan.source, Source::Path { path } if is_yaml_path(path)) {
+        load_or_install(&conn, Extension::Yaml)?;
+    }
     Ok(conn)
 }
 
