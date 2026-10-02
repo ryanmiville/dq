@@ -5,6 +5,7 @@ pub enum InputFormat {
     Csv,
     Json,
     JsonArray,
+    Yaml,
     Path(String),
     S3(String),
     Passthrough(String),
@@ -15,6 +16,7 @@ pub enum OutputFormat {
     Csv,
     Json,
     JsonArray,
+    Yaml,
     Pretty,
     Path(String),
     Passthrough(String),
@@ -39,6 +41,7 @@ impl InputFormat {
             "csv" => Self::Csv,
             "json" => Self::Json,
             "json-array" => Self::JsonArray,
+            "yaml" => Self::Yaml,
             _ if is_s3_uri(&value) => Self::S3(value),
             _ if file_like(&value) => Self::Path(value),
             _ => Self::Passthrough(value),
@@ -49,6 +52,7 @@ impl InputFormat {
         match self {
             Self::Json | Self::JsonArray => "read_json_auto('/dev/stdin')".to_string(),
             Self::Csv => "read_csv('/dev/stdin')".to_string(),
+            Self::Yaml => "read_yaml('/dev/stdin')".to_string(),
             Self::Path(path) | Self::S3(path) => sql_string_literal(path),
             Self::Passthrough(text) => text.clone(),
         }
@@ -69,6 +73,7 @@ impl OutputFormat {
             "csv" => Self::Csv,
             "json" => Self::Json,
             "json-array" => Self::JsonArray,
+            "yaml" => Self::Yaml,
             "pretty" => Self::Pretty,
             _ if file_like(&value) => Self::Path(value),
             _ => Self::Passthrough(value),
@@ -84,13 +89,34 @@ impl OutputFormat {
             Self::JsonArray => {
                 OutputExecution::Copy("'/dev/stdout' (FORMAT JSON, ARRAY true)".to_string())
             }
+            Self::Yaml => OutputExecution::Copy("'/dev/stdout' (FORMAT YAML)".to_string()),
             Self::Csv => OutputExecution::Copy(
                 "'/dev/stdout' (FORMAT csv, DELIMITER ',', HEADER)".to_string(),
             ),
+            Self::Path(path) if is_yaml_path(path) => {
+                OutputExecution::Copy(format!("{} (FORMAT YAML)", sql_string_literal(path)))
+            }
             Self::Path(path) => OutputExecution::Copy(sql_string_literal(path)),
             Self::Passthrough(text) => OutputExecution::Copy(text.clone()),
         }
     }
+
+    pub fn requires_yaml(&self) -> bool {
+        match self {
+            Self::Yaml => true,
+            Self::Path(path) => is_yaml_path(path),
+            _ => false,
+        }
+    }
+}
+
+pub fn is_yaml_path(value: &str) -> bool {
+    Path::new(value)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("yaml") || extension.eq_ignore_ascii_case("yml")
+        })
 }
 
 fn is_s3_uri(value: &str) -> bool {

@@ -58,6 +58,9 @@ cargo build --release
 - `csv`
 - `json`
 - `json-array`
+- `yaml`
+
+`to` also supports `pretty`. YAML stdin currently fails in the DuckDB YAML extension; use `.yaml` or `.yml` file paths for input.
 
 `from` and `to` also accept file paths directly, so you can point at files without wrapping them in SQL quotes, and `from` accepts `s3://` URIs for public or authenticated S3 reads.
 

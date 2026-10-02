@@ -1,4 +1,5 @@
 mod cmd;
+mod extensions;
 mod format;
 mod plan;
 mod storage;
@@ -24,7 +25,7 @@ struct Cli {
 enum Command {
     /// Read data from stdin, a file, or S3 and output a query plan
     ///
-    /// Presets: csv, json, json-array. File paths and s3:// URIs are treated as sources.
+    /// Presets: csv, json, json-array, yaml. File paths and s3:// URIs are treated as sources.
     /// Use --expr for raw DuckDB read expressions.
     From {
         /// Input format preset, input file path, or s3:// URI
@@ -38,7 +39,7 @@ enum Command {
 
     /// Read a query plan from stdin and write query results in the given format
     ///
-    /// Presets: csv, json, json-array, pretty. Any other path is treated as a
+    /// Presets: csv, json, json-array, yaml, pretty. Any other path is treated as a
     /// file destination. Use --expr for raw DuckDB COPY expressions.
     To {
         /// Output format preset or output file path

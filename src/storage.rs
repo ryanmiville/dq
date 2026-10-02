@@ -3,7 +3,10 @@ use std::{env, process};
 use anyhow::{Context, Result, anyhow};
 use duckdb::Connection;
 
-use crate::plan::{Plan, Source};
+use crate::{
+    extensions::{Extension, load_or_install},
+    plan::{Plan, Source},
+};
 
 const CA_CERT_FILE_ENV: &str = "DQ_CA_CERT_FILE";
 
@@ -12,11 +15,11 @@ pub fn prepare(conn: &Connection, plan: &Plan) -> Result<()> {
         return Ok(());
     };
 
-    load_or_install(conn, "httpfs")?;
+    load_or_install(conn, Extension::Httpfs)?;
     configure_ca_cert_file(conn)?;
 
     if !has_matching_s3_secret(conn, uri)? {
-        load_or_install(conn, "aws")?;
+        load_or_install(conn, Extension::Aws)?;
         let secret_name = format!("dq_s3_{}", process::id());
         conn.execute_batch(&credential_chain_secret_sql(&secret_name))
             .context("failed to configure S3 access")?;
@@ -64,15 +67,6 @@ fn s3_uri(source: &Source) -> Option<&str> {
 
 fn is_s3_uri(value: &str) -> bool {
     value.starts_with("s3://")
-}
-
-fn load_or_install(conn: &Connection, extension: &str) -> Result<()> {
-    if conn.execute_batch(&format!("LOAD {extension};")).is_ok() {
-        return Ok(());
-    }
-
-    conn.execute_batch(&format!("INSTALL {extension}; LOAD {extension};"))
-        .with_context(|| format!("failed to install or load DuckDB `{extension}` extension"))
 }
 
 fn has_matching_s3_secret(conn: &Connection, uri: &str) -> Result<bool> {

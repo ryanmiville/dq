@@ -1,0 +1,11 @@
+cmd = "{dq} from json | {dq} to yaml"
+
+[[cases]]
+name = "single_row"
+input = '{"name":"Ada","age":37}'
+[cases.expect]
+kind = "exact"
+stdout = '''
+name: Ada
+age: 37
+'''

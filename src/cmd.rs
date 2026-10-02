@@ -5,6 +5,7 @@ use std::{
 };
 
 use crate::{
+    extensions::{self, Extension, load_or_install},
     format::{InputFormat, OutputExecution, OutputFormat},
     plan::{Op, Plan},
     storage,
@@ -49,6 +50,9 @@ pub fn sql() -> Result<()> {
 }
 
 fn execute_to(conn: &Connection, plan: &Plan, format: &OutputFormat) -> Result<()> {
+    if format.requires_yaml() {
+        load_or_install(conn, Extension::Yaml)?;
+    }
     match format.execution() {
         OutputExecution::Copy(destination) => execute_copy(conn, plan, &destination),
         OutputExecution::Pretty => print_pretty_query(conn, &plan.compile_sql()),
@@ -181,6 +185,7 @@ fn transform(op: Op, context: &'static str) -> Result<()> {
 fn open_connection(plan: &Plan) -> Result<Connection> {
     let conn = Connection::open_in_memory().context("failed to open duckdb")?;
     storage::prepare(&conn, plan)?;
+    extensions::prepare(&conn, plan)?;
     Ok(conn)
 }
 
