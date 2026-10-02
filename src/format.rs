@@ -1,12 +1,11 @@
 use std::path::Path;
 
-use anyhow::{Result, bail};
-
 #[derive(Debug, Eq, PartialEq)]
 pub enum InputFormat {
     Csv,
     Json,
     JsonArray,
+    Yaml,
     Path(String),
     S3(String),
     Passthrough(String),
@@ -29,32 +28,31 @@ pub enum OutputExecution {
 }
 
 impl InputFormat {
-    pub fn parse(value: Option<String>, expr: Option<String>) -> Result<Self> {
+    pub fn parse(value: Option<String>, expr: Option<String>) -> Self {
         match (value, expr) {
-            (_, Some(expr)) => Ok(Self::Passthrough(expr)),
+            (_, Some(expr)) => Self::Passthrough(expr),
             (Some(value), None) => Self::parse_arg(value),
             (None, None) => unreachable!("clap guarantees either a positional value or --expr"),
         }
     }
 
-    fn parse_arg(value: String) -> Result<Self> {
-        Ok(match value.to_ascii_lowercase().as_str() {
+    fn parse_arg(value: String) -> Self {
+        match value.to_ascii_lowercase().as_str() {
             "csv" => Self::Csv,
             "json" => Self::Json,
             "json-array" => Self::JsonArray,
-            "yaml" => bail!(
-                "YAML stdin is not supported by the DuckDB YAML extension; use `dq from <file.yaml>` or `dq from <file.yml>`"
-            ),
+            "yaml" => Self::Yaml,
             _ if is_s3_uri(&value) => Self::S3(value),
             _ if file_like(&value) => Self::Path(value),
             _ => Self::Passthrough(value),
-        })
+        }
     }
 
     pub fn read_fn(&self) -> String {
         match self {
             Self::Json | Self::JsonArray => "read_json_auto('/dev/stdin')".to_string(),
             Self::Csv => "read_csv('/dev/stdin')".to_string(),
+            Self::Yaml => "read_yaml('/dev/stdin')".to_string(),
             Self::Path(path) | Self::S3(path) => sql_string_literal(path),
             Self::Passthrough(text) => text.clone(),
         }
@@ -139,14 +137,8 @@ mod tests {
 
     #[test]
     fn parses_input_presets_before_paths() {
-        assert_eq!(
-            InputFormat::parse_arg("json".into()).unwrap(),
-            InputFormat::Json
-        );
-        assert_eq!(
-            InputFormat::parse_arg("csv".into()).unwrap(),
-            InputFormat::Csv
-        );
+        assert_eq!(InputFormat::parse_arg("json".into()), InputFormat::Json);
+        assert_eq!(InputFormat::parse_arg("csv".into()), InputFormat::Csv);
     }
 
     #[test]
@@ -164,7 +156,7 @@ mod tests {
     #[test]
     fn parses_paths_without_sql_quotes() {
         assert_eq!(
-            InputFormat::parse_arg("../testdata.json".into()).unwrap(),
+            InputFormat::parse_arg("../testdata.json".into()),
             InputFormat::Path("../testdata.json".into())
         );
         assert_eq!(
@@ -176,11 +168,11 @@ mod tests {
     #[test]
     fn parses_s3_uris_with_or_without_file_extensions() {
         assert_eq!(
-            InputFormat::parse_arg("s3://bucket/data.parquet".into()).unwrap(),
+            InputFormat::parse_arg("s3://bucket/data.parquet".into()),
             InputFormat::S3("s3://bucket/data.parquet".into())
         );
         assert_eq!(
-            InputFormat::parse_arg("s3://bucket/dataset".into()).unwrap(),
+            InputFormat::parse_arg("s3://bucket/dataset".into()),
             InputFormat::S3("s3://bucket/dataset".into())
         );
     }
@@ -188,7 +180,7 @@ mod tests {
     #[test]
     fn preserves_common_passthrough_expressions() {
         assert_eq!(
-            InputFormat::parse_arg("read_csv('/dev/stdin')".into()).unwrap(),
+            InputFormat::parse_arg("read_csv('/dev/stdin')".into()),
             InputFormat::Passthrough("read_csv('/dev/stdin')".into())
         );
         assert_eq!(

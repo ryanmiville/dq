@@ -1,8 +1,0 @@
-name: api
-enabled: true
-server:
-  host: localhost
-  port: 8080
-features:
-  - auth
-  - metrics

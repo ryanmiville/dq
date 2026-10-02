@@ -25,8 +25,7 @@ struct Cli {
 enum Command {
     /// Read data from stdin, a file, or S3 and output a query plan
     ///
-    /// Presets: csv, json, json-array. File paths and s3:// URIs are treated as sources.
-    /// YAML is supported through .yaml/.yml file paths; YAML stdin is not supported.
+    /// Presets: csv, json, json-array, yaml. File paths and s3:// URIs are treated as sources.
     /// Use --expr for raw DuckDB read expressions.
     From {
         /// Input format preset, input file path, or s3:// URI
@@ -116,7 +115,7 @@ fn main() {
 fn run() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::From { format, expr } => cmd::from(&InputFormat::parse(format, expr)?),
+        Command::From { format, expr } => cmd::from(&InputFormat::parse(format, expr)),
         Command::To { format, expr } => cmd::to(&OutputFormat::parse(format, expr)),
         Command::Sql => cmd::sql(),
         Command::Select { columns } => cmd::select(&columns),

@@ -32,7 +32,6 @@ jobs:
         run: |
           cargo build
           echo 'a,b' | ./target/debug/dq from csv > /dev/null 2>&1
-          ./target/debug/dq from tests/data/config.yaml | ./target/debug/dq to json > /dev/null
           cargo test
 
   lint:

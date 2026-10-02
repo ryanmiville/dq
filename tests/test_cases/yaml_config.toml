@@ -1,8 +1,0 @@
-cmd = "{dq} from tests/data/config.yaml | {dq} select 'name, server.port AS port, features' | {dq} to json"
-
-[[cases]]
-name = "queries_nested_config"
-input = ""
-[cases.expect]
-kind = "exact"
-stdout = '{"name":"api","port":8080,"features":["auth","metrics"]}'

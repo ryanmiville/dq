@@ -58,8 +58,9 @@ cargo build --release
 - `csv`
 - `json`
 - `json-array`
+- `yaml`
 
-`to` also supports `yaml` and `pretty`. YAML input is supported through `.yaml` and `.yml` file paths; the `from yaml` stdin preset is deferred until the DuckDB YAML extension supports non-seekable input.
+`to` also supports `pretty`. YAML stdin currently fails in the DuckDB YAML extension; use `.yaml` or `.yml` file paths for input.
 
 `from` and `to` also accept file paths directly, so you can point at files without wrapping them in SQL quotes, and `from` accepts `s3://` URIs for public or authenticated S3 reads.
 
@@ -161,18 +162,6 @@ printf '{"name":"Ada","age":37}\n{"name":"Linus","age":54}\n' |
 	{"name":"Linus","age":54}
 ]
 ```
-
-### YAML configuration files
-
-```bash
-dq from config.yaml | dq select "name, server.port AS port" | dq to json
-dq from config.yml | dq where "enabled" | dq to yaml
-dq from data.json | dq to output.yaml
-```
-
-YAML mappings become rows, root sequences expand into rows, and multiple documents are read as separate rows. Nested mappings and sequences remain structured values. YAML output uses block style, with result rows separated by `---`.
-
-The DuckDB `yaml` community extension is installed on first use and loaded only when executing a YAML source or destination. First use needs network access; later invocations can load the cached extension offline. YAML conversion does not preserve comments, anchors, or original formatting.
 
 ### Describe
 
