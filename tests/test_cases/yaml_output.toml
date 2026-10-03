@@ -1,4 +1,9 @@
-cmd = "{dq} from json | {dq} to yaml"
+cmd = '''
+set -e
+mkdir -p "$XDG_CONFIG_HOME/dq/plugins"
+cp plugins/optional/yaml.toml "$XDG_CONFIG_HOME/dq/plugins/yaml.toml"
+{dq} from json | {dq} to yaml
+'''
 
 [[cases]]
 name = "single_row"

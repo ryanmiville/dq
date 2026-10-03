@@ -34,7 +34,7 @@ enum Command {
 
     #[command(
         about = "Read data from stdin, a file, or a URL and output a query plan",
-        long_about = "Read data from stdin, a file, or a URL and output a query plan.\n\nBundled formats: csv, json, json-array, yaml. User plugins can add formats and URL schemes. Use --expr for raw DuckDB read expressions."
+        long_about = "Read data from stdin, a file, or a URL and output a query plan.\n\nBundled formats: csv, json, json-array. User plugins can add formats and URL schemes. Use --expr for raw DuckDB read expressions."
     )]
     From {
         #[arg(
@@ -51,7 +51,7 @@ enum Command {
 
     #[command(
         about = "Read a query plan from stdin and write query results in the given format",
-        long_about = "Read a query plan from stdin and write query results in the given format.\n\nBundled formats: csv, json, json-array, yaml, pretty. User plugins can add formats and URL schemes. Use --expr for raw DuckDB COPY expressions."
+        long_about = "Read a query plan from stdin and write query results in the given format.\n\nBundled formats: csv, json, json-array, pretty. User plugins can add formats and URL schemes. Use --expr for raw DuckDB COPY expressions."
     )]
     To {
         #[arg(

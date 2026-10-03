@@ -87,6 +87,11 @@ case "$scenario" in
         ;;
 esac
 case "$scenario" in
+    optional_yaml)
+        cp plugins/optional/yaml.toml "$temp_dir/download.toml"
+        id=yaml
+        format=yaml
+        ;;
     redirect) url="http://127.0.0.1:$port/redirect" ;;
     invalid|invalid_replace)
         sed 's/api_version = 1/api_version = 99/' "$temp_dir/download.toml" > "$temp_dir/invalid.toml"
@@ -159,6 +164,7 @@ fi
 cmp "$download" "$XDG_CONFIG_HOME/dq/plugins/$id.toml"
 grep -Fq 'Installed plugin' "$temp_dir/install.out"
 case "$scenario" in
+    optional_yaml) printf '{"name":"Ada","age":37}\n' | {dq} from json | {dq} to yaml ;;
     deferred_setup) {dq} from custom < /dev/null | {dq} sql ;;
     storage) {dq} from custom://bucket/data.parquet | {dq} sql ;;
     *) printf '{"name":"Ada","age":37}\n' | {dq} from "$format" | {dq} to "$format" ;;
@@ -171,6 +177,16 @@ input = "install"
 [cases.expect]
 kind = "exact"
 stdout = '{"name":"Ada","age":37}'
+
+[[cases]]
+name = "installs_optional_yaml"
+input = "optional_yaml"
+[cases.expect]
+kind = "exact"
+stdout = '''
+name: Ada
+age: 37
+'''
 
 [[cases]]
 name = "follows_redirect"
