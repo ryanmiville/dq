@@ -1,0 +1,64 @@
+cmd = '''
+temp_dir=$(mktemp -d)
+trap 'rm -rf "$temp_dir"' EXIT
+export XDG_CONFIG_HOME="$temp_dir"
+mkdir -p "$XDG_CONFIG_HOME/dq/plugins"
+cat > "$XDG_CONFIG_HOME/dq/plugins/custom.toml"
+{dq} from json | {dq} to json
+'''
+
+[[cases]]
+name = "duplicate_name"
+input = "api_version = 1\nid = \"custom-csv\"\nkind = \"format\"\n[[formats]]\nname = \"CSV\"\nread = \"read_json_auto({{path}})\"\n"
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "conflicting format name `CSV`: plugins `csv` and `custom-csv`"
+
+[[cases]]
+name = "duplicate_suffix"
+input = "api_version = 1\nid = \"custom\"\nkind = \"format\"\n[[formats]]\nname = \"other\"\nsuffixes = [\"CSV\"]\nread = \"read_json_auto({{path}})\"\n"
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "conflicting suffix `CSV`: plugins `csv` and `custom`"
+
+[[cases]]
+name = "duplicate_scheme"
+input = "api_version = 1\nid = \"custom\"\nkind = \"storage\"\nschemes = [\"s3\"]\n"
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "conflicting scheme `s3`: plugins `s3` and `custom`"
+
+[[cases]]
+name = "duplicate_id"
+input = "api_version = 1\nid = \"csv\"\nkind = \"format\"\n[[formats]]\nname = \"other\"\nread = \"read_json_auto({{path}})\"\n"
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "duplicate plugin id `csv`"
+
+[[cases]]
+name = "unsupported_version"
+input = "api_version = 99\nid = \"custom\"\nkind = \"format\"\n[[formats]]\nname = \"other\"\nread = \"read_json_auto({{path}})\"\n"
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "unsupported plugin API version 99"
+
+[[cases]]
+name = "unsupported_conditions"
+input = "api_version = 1\nid = \"custom\"\nkind = \"format\"\n[[formats]]\nname = \"other\"\nread = \"read_json_auto({{path}})\"\n[[setup]]\nkind = \"sql\"\nwhen = \"SELECT true\"\nsql = \"SELECT 1\"\n"
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "unknown field `when`"
+
+[[cases]]
+name = "incorrect_role"
+input = "api_version = 1\nid = \"custom\"\nkind = \"storage\"\n[[formats]]\nname = \"other\"\nread = \"read_json_auto({{path}})\"\n"
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "storage plugin must declare schemes and no formats"

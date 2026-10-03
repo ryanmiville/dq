@@ -62,7 +62,77 @@ cargo build --release
 
 `to` also supports `pretty`. YAML stdin currently fails in the DuckDB YAML extension; use `.yaml` or `.yml` file paths for input.
 
-`from` and `to` also accept file paths directly, so you can point at files without wrapping them in SQL quotes, and `from` accepts `s3://` URIs for public or authenticated S3 reads.
+`from` and `to` also accept file paths and URLs directly, so you can point at files without wrapping them in SQL quotes. The bundled S3 storage plugin supports public or authenticated S3 reads and writes. Quote glob patterns, such as `dq from 'data/*.parquet'`, to let DuckDB expand them.
+
+### Plugins and global configuration
+
+Bundled formats and S3 support are TOML plugins embedded in the binary at build time. Adding a file under `plugins/` includes it automatically in subsequent builds. User plugins use the same schema and load without rebuilding dq.
+
+User configuration lives at `$XDG_CONFIG_HOME/dq`, or `~/.config/dq` when `XDG_CONFIG_HOME` is unset. The optional `config.toml` controls bundled plugins and additional plugin directories:
+
+```toml
+disabled_bundled = ["csv"]
+plugin_dirs = ["extra", "/path/to/shared/plugins"]
+```
+
+dq always discovers `plugins/*.toml` inside its configuration directory. Relative entries in `plugin_dirs` resolve against that directory. Disabling uses the bundled plugin's `id`, so disabling `json` removes both `json` and `json-array`. User plugins can reuse a disabled bundled plugin's ID. Duplicate IDs, format names, suffixes, or URL schemes produce errors; load order never chooses a winner.
+
+For example, save this as `~/.config/dq/plugins/csv.toml` alongside the configuration above to replace CSV with a pipe-delimited variant:
+
+```toml
+api_version = 1
+id = "csv"
+kind = "format"
+
+[[formats]]
+name = "csv"
+suffixes = ["csv"]
+read = "read_csv({{path}}, delim='|')"
+
+[formats.write]
+kind = "copy"
+options = "FORMAT CSV, DELIMITER '|', HEADER"
+```
+
+`name` selects a format for stdin/stdout, while `suffixes` selects it for files and URLs. Names and suffixes match without regard to case. One plugin can declare multiple `[[formats]]` variants. A format can provide `read`, `write`, or both. `{{path}}` becomes a quoted SQL string containing the source or destination, including `/dev/stdin` or `/dev/stdout` for named formats. Unclaimed suffixes retain DuckDB's automatic format inference; disabling a plugin removes its registrations and setup, rather than preventing DuckDB from reading the format.
+
+The `duckbox` writer selects dq's native table renderer instead of DuckDB `COPY`:
+
+```toml
+api_version = 1
+id = "table"
+kind = "format"
+
+[[formats]]
+name = "table"
+
+[formats.write]
+kind = "duckbox"
+```
+
+The bundled `pretty` plugin uses this writer and supplies terminal auto-display. A replacement `pretty` format can change terminal output; disabling it without a replacement makes terminal auto-display unavailable.
+
+Plugins declare ordered setup steps for DuckDB extensions and SQL. For example, a YAML format plugin includes:
+
+```toml
+[[setup]]
+kind = "extension"
+name = "yaml"
+repository = "community"
+```
+
+An extension step loads the extension, automatically installing it when needed. Omit `repository` for DuckDB's default repository. SQL steps can use environment values at execution time:
+
+```toml
+[[setup]]
+kind = "sql"
+requires_env = ["DQ_CA_CERT_FILE"]
+sql = "SET ca_cert_file = {{env:DQ_CA_CERT_FILE}};"
+```
+
+`requires_env` skips a step when any listed variable is absent. Environment substitutions are supported in setup SQL and become quoted SQL strings. A storage plugin uses `kind = "storage"` and `schemes = ["s3"]` instead of format recipes. Storage and format plugins compose for each endpoint.
+
+Source reader SQL and setup recipes travel with the plan, so downstream stages do not need to look up the source plugin again. Shared setup runs once per plugin per executing DuckDB connection, with source plugins preceding destination plugins. If setup SQL uses `{{path}}`, it refers to the first endpoint using that plugin. Environment values are read by the executing process. `dq sql` prints the reader query without running setup, installing extensions, or reading data.
 
 ## Examples
 
@@ -236,9 +306,9 @@ For S3 connections that require a custom certificate authority, set `DQ_CA_CERT_
 export DQ_CA_CERT_FILE="$AWS_CA_BUNDLE"
 ```
 
-On the first executed S3 query, DQ installs DuckDB's `httpfs` extension and, when it must create a credential-chain secret, the `aws` extension in DuckDB's user extension directory; later invocations reuse those installed files while loading them into each new in-memory connection.
+On the first executed S3 query, DQ installs DuckDB's `httpfs` and `aws` extensions in DuckDB's user extension directory; later invocations reuse those installed files while loading them into each new in-memory connection.
 
-DQ uses a matching DuckDB S3 secret when one is available; otherwise it creates a temporary credential-chain secret that lasts only for the current in-memory connection and does not persist credentials to disk.
+The S3 plugin creates a temporary credential-chain secret once per connection, even when both the source and destination use S3. The secret lasts only for that connection and does not persist credentials to disk.
 
 Because the final pipeline process executes the query, export AWS settings for the whole pipeline instead of assigning them only to `dq from`; for example, use `export AWS_PROFILE=production` rather than `AWS_PROFILE=production dq from ... | dq to ...`.
 
@@ -267,7 +337,7 @@ dq from data/input.json |
 ```
 
 ```sql
-SELECT name FROM (SELECT * FROM (SELECT * FROM '/absolute/path/data/input.json') AS q WHERE age >= 40) AS q;
+SELECT name FROM (SELECT * FROM (SELECT * FROM read_json_auto('/absolute/path/data/input.json')) AS q WHERE age >= 40) AS q;
 ```
 
 This prints the relation query represented by the plan, not the temporary-table and `COPY` statements used by `dq to`. Queries for streamed input reference `/dev/stdin` and require the original data on stdin if executed separately.

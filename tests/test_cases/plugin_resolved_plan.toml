@@ -1,0 +1,29 @@
+cmd = '''
+temp_dir=$(mktemp -d)
+trap 'rm -rf "$temp_dir"' EXIT
+export XDG_CONFIG_HOME="$temp_dir"
+mkdir -p "$XDG_CONFIG_HOME/dq/plugins"
+cat > "$XDG_CONFIG_HOME/dq/plugins/resolved.toml" <<'PLUGIN'
+api_version = 1
+id = "resolved"
+kind = "format"
+[[formats]]
+name = "resolved"
+read = "(SELECT input.*, settings.value AS configured FROM read_json_auto({{path}}) AS input CROSS JOIN plugin_settings AS settings)"
+[[setup]]
+kind = "sql"
+sql = "CREATE TEMP TABLE plugin_settings AS SELECT {{env:DQ_PLUGIN_VALUE}} AS value"
+PLUGIN
+DQ_PLUGIN_VALUE=source {dq} from resolved > "$temp_dir/plan"
+rm "$XDG_CONFIG_HOME/dq/plugins/resolved.toml"
+printf 'invalid config' > "$XDG_CONFIG_HOME/dq/config.toml"
+{dq} where "age > 40" < "$temp_dir/plan" > "$temp_dir/filtered"
+XDG_CONFIG_HOME="$temp_dir/clean" DQ_PLUGIN_VALUE="endpoint's-value" {dq} to json < "$temp_dir/filtered"
+'''
+
+[[cases]]
+name = "carries_recipes_and_defers_environment"
+input = "{\"name\":\"Ada\",\"age\":37}\n{\"name\":\"Linus\",\"age\":54}\n"
+[cases.expect]
+kind = "exact"
+stdout = "{\"name\":\"Linus\",\"age\":54,\"configured\":\"endpoint's-value\"}"

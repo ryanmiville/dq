@@ -1,0 +1,24 @@
+cmd = '''
+temp_dir=$(mktemp -d)
+trap 'rm -rf "$temp_dir"' EXIT
+export XDG_CONFIG_HOME="$temp_dir"
+mkdir -p "$XDG_CONFIG_HOME/dq/plugins"
+cat > "$XDG_CONFIG_HOME/dq/plugins/writeonly.toml" <<'PLUGIN'
+api_version = 1
+id = "writeonly"
+kind = "format"
+[[formats]]
+name = "restricted"
+[formats.write]
+kind = "duckbox"
+PLUGIN
+{dq} from restricted
+'''
+
+[[cases]]
+name = "rejects_reading"
+input = ""
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "format `restricted` does not support reading"

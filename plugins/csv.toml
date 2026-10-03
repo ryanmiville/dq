@@ -1,0 +1,11 @@
+api_version = 1
+id = "csv"
+kind = "format"
+
+[[formats]]
+name = "csv"
+suffixes = ["csv"]
+read = "read_csv({{path}})"
+[formats.write]
+kind = "copy"
+options = "FORMAT CSV, DELIMITER ',', HEADER"

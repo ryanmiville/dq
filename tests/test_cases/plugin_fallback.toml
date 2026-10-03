@@ -1,0 +1,17 @@
+cmd = '''
+temp_dir=$(mktemp -d)
+trap 'rm -rf "$temp_dir"' EXIT
+export XDG_CONFIG_HOME="$temp_dir"
+mkdir -p "$XDG_CONFIG_HOME/dq/plugins"
+printf 'disabled_bundled = ["csv"]
+' > "$XDG_CONFIG_HOME/dq/config.toml"
+cat > "$temp_dir/people.csv"
+{dq} from "$temp_dir/people.csv" | {dq} to json
+'''
+
+[[cases]]
+name = "duckdb_infers_disabled_suffix"
+input = "name,age\nAda,37\n"
+[cases.expect]
+kind = "exact"
+stdout = "{\"name\":\"Ada\",\"age\":37}"

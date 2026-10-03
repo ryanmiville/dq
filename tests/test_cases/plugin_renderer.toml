@@ -1,0 +1,28 @@
+cmd = '''
+temp_dir=$(mktemp -d)
+trap 'rm -rf "$temp_dir"' EXIT
+export XDG_CONFIG_HOME="$temp_dir"
+mkdir -p "$XDG_CONFIG_HOME/dq/plugins"
+cat > "$XDG_CONFIG_HOME/dq/plugins/renderer.toml" <<'PLUGIN'
+api_version = 1
+id = "renderer"
+kind = "format"
+[[formats]]
+name = "table"
+suffixes = ["table"]
+[formats.write]
+kind = "duckbox"
+PLUGIN
+{dq} from json | {dq} to "$temp_dir/preview.table"
+output=$(cat "$temp_dir/preview.table")
+[[ "$output" == *Ada* && "$output" == *varchar* ]]
+printf 'rendered
+'
+'''
+
+[[cases]]
+name = "native_renderer_writes_destination"
+input = "{\"name\":\"Ada\"}"
+[cases.expect]
+kind = "exact"
+stdout = "rendered"

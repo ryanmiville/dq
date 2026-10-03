@@ -1,0 +1,23 @@
+cmd = '''
+temp_dir=$(mktemp -d)
+trap 'rm -rf "$temp_dir"' EXIT
+export XDG_CONFIG_HOME="$temp_dir"
+mkdir -p "$XDG_CONFIG_HOME/dq/plugins"
+cat > "$XDG_CONFIG_HOME/dq/plugins/readonly.toml" <<'PLUGIN'
+api_version = 1
+id = "readonly"
+kind = "format"
+[[formats]]
+name = "restricted"
+read = "read_json_auto({{path}})"
+PLUGIN
+{dq} from json | {dq} to restricted
+'''
+
+[[cases]]
+name = "rejects_writing"
+input = ""
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "format `restricted` does not support writing"

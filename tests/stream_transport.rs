@@ -21,7 +21,7 @@ fn from_streams_framed_plan_followed_by_raw_input() {
 
     assert_success(&output, "from");
     let (plan, payload) = decode_stream(&output.stdout);
-    assert_eq!(plan["version"], 1);
+    assert_eq!(plan["version"], 2);
     assert_eq!(plan["source"]["kind"], "stream");
     assert_eq!(plan["source"]["read_expr"], "read_json_auto('/dev/stdin')");
     assert_eq!(payload, input);

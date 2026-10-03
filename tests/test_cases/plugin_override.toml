@@ -1,0 +1,29 @@
+cmd = '''
+temp_dir=$(mktemp -d)
+trap 'rm -rf "$temp_dir"' EXIT
+export XDG_CONFIG_HOME="$temp_dir"
+mkdir -p "$XDG_CONFIG_HOME/dq/plugins"
+printf 'disabled_bundled = ["csv"]
+' > "$XDG_CONFIG_HOME/dq/config.toml"
+cat > "$XDG_CONFIG_HOME/dq/plugins/csv.toml" <<'PLUGIN'
+api_version = 1
+id = "csv"
+kind = "format"
+[[formats]]
+name = "csv"
+suffixes = ["csv"]
+read = "read_csv({{path}}, delim='|')"
+[formats.write]
+kind = "copy"
+options = "FORMAT CSV, DELIMITER '|', HEADER"
+PLUGIN
+{dq} from json | {dq} to "$temp_dir/rows.CSV"
+{dq} from "$temp_dir/rows.CSV" | {dq} to CSV
+'''
+
+[[cases]]
+name = "replaces_names_and_suffixes"
+input = "{\"name\":\"Ada\",\"age\":37}\n{\"name\":\"Linus\",\"age\":54}\n"
+[cases.expect]
+kind = "exact"
+stdout = "name|age\nAda|37\nLinus|54\n"

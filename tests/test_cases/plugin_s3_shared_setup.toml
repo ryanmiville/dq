@@ -1,0 +1,24 @@
+cmd = '''
+temp_dir=$(mktemp -d)
+trap 'rm -rf "$temp_dir"' EXIT
+export XDG_CONFIG_HOME="$temp_dir"
+mkdir -p "$XDG_CONFIG_HOME/dq/plugins"
+cat > "$XDG_CONFIG_HOME/dq/plugins/probe.toml" <<'PLUGIN'
+api_version = 1
+id = "s3-probe"
+kind = "format"
+[[formats]]
+name = "s3-probe"
+suffixes = ["s3probe"]
+read = "(SELECT error(CASE WHEN (SELECT count(*) FROM which_secret({{path}}, 's3')) = 1 AND (SELECT count(*) FROM which_secret('s3://bucket/output.json', 's3')) = 1 THEN 'shared S3 setup is ready' ELSE 'S3 setup is missing' END))"
+PLUGIN
+{dq} from s3://bucket/input.s3probe | {dq} to s3://bucket/output.json
+'''
+
+[[cases]]
+name = "initializes_both_endpoints_once_before_query"
+input = ""
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "shared S3 setup is ready"

@@ -1,0 +1,24 @@
+cmd = '''
+temp_dir=$(mktemp -d)
+trap 'rm -rf "$temp_dir"' EXIT
+export XDG_CONFIG_HOME="$temp_dir"
+mkdir -p "$XDG_CONFIG_HOME/dq/plugins"
+cat > "$XDG_CONFIG_HOME/dq/config.toml"
+{dq} from json | {dq} to json
+'''
+
+[[cases]]
+name = "unknown_setting"
+input = "unknown_setting = true\n"
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "unknown field `unknown_setting`"
+
+[[cases]]
+name = "missing_explicit_directory"
+input = "plugin_dirs = [\"missing\"]\n"
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "failed to read plugin directory"

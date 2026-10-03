@@ -1,20 +1,30 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-const PLAN_VERSION: u32 = 1;
+use crate::plugins::Setup;
+
+const PLAN_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Plan {
     pub version: u32,
     pub source: Source,
     pub ops: Vec<Op>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub setup: Vec<Setup>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Source {
-    Path { path: String },
-    Stream { read_expr: String },
+    Path {
+        path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        read_expr: Option<String>,
+    },
+    Stream {
+        read_expr: String,
+    },
 }
 
 impl Source {
@@ -36,21 +46,33 @@ pub enum Op {
 }
 
 impl Plan {
+    #[cfg(test)]
     pub fn from_path(path: impl Into<String>) -> Self {
-        Self::new(Source::Path { path: path.into() })
+        Self::new(
+            Source::Path {
+                path: path.into(),
+                read_expr: None,
+            },
+            Vec::new(),
+        )
     }
 
+    #[cfg(test)]
     pub fn from_stream(read_expr: impl Into<String>) -> Self {
-        Self::new(Source::Stream {
-            read_expr: read_expr.into(),
-        })
+        Self::new(
+            Source::Stream {
+                read_expr: read_expr.into(),
+            },
+            Vec::new(),
+        )
     }
 
-    fn new(source: Source) -> Self {
+    pub fn new(source: Source, setup: Vec<Setup>) -> Self {
         Self {
             version: PLAN_VERSION,
             source,
             ops: Vec::new(),
+            setup,
         }
     }
 
@@ -91,7 +113,11 @@ impl Plan {
 
 fn base_query(source: &Source) -> String {
     match source {
-        Source::Path { path } => format!("SELECT * FROM {}", sql_string_literal(path)),
+        Source::Path {
+            read_expr: Some(read_expr),
+            ..
+        } => format!("SELECT * FROM {read_expr}"),
+        Source::Path { path, .. } => format!("SELECT * FROM {}", sql_string_literal(path)),
         Source::Stream { read_expr } => format!("SELECT * FROM {read_expr}"),
     }
 }
@@ -127,7 +153,7 @@ mod tests {
 
         assert_eq!(decoded, plan);
         let text = String::from_utf8(json).unwrap();
-        assert!(text.contains("\"version\":1"));
+        assert!(text.contains("\"version\":2"));
         assert!(text.contains("\"kind\":\"stream\""));
         assert!(text.contains("\"read_expr\":\"read_json_auto('/dev/stdin')\""));
         assert!(text.contains("\"kind\":\"where\""));
@@ -146,11 +172,15 @@ mod tests {
     #[test]
     fn rejects_unsupported_plan_version() {
         let error = Plan::from_json_slice(
-            br#"{"version":2,"source":{"kind":"path","path":"input.json"},"ops":[]}"#,
+            br#"{"version":999,"source":{"kind":"path","path":"input.json"},"ops":[]}"#,
         )
         .unwrap_err();
 
-        assert!(error.to_string().contains("unsupported dq plan version: 2"));
+        assert!(
+            error
+                .to_string()
+                .contains("unsupported dq plan version: 999")
+        );
     }
 
     #[test]
