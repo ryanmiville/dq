@@ -55,11 +55,16 @@ server = HTTPServer(("127.0.0.1", 0), partial(Handler, directory=str(root)))
 server.serve_forever()
 PY
 server_pid=$!
-for attempt in {1..100}; do
+for attempt in {1..300}; do
     [ -s "$temp_dir/port" ] && break
-    kill -0 "$server_pid"
-    sleep 0.02
+    kill -0 "$server_pid" 2>/dev/null || break
+    sleep 0.1
 done
+if [ ! -s "$temp_dir/port" ]; then
+    cat "$temp_dir/server.log" >&2
+    printf 'HTTP fixture server did not become ready\n' >&2
+    exit 1
+fi
 port=$(cat "$temp_dir/port")
 url="http://127.0.0.1:$port/download.toml"
 args=()
