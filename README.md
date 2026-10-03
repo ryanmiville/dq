@@ -54,20 +54,27 @@ cargo build --release
 
 ### Preset formats
 
-`from` and `to` support these presets:
+`from` and `to` bundle these presets:
 
 - `csv`
 - `json`
 - `json-array`
-- `yaml`
 
-`to` also supports `pretty`. YAML stdin currently fails in the DuckDB YAML extension; use `.yaml` or `.yml` file paths for input.
+`to` also supports `pretty`. YAML is available as an [optional plugin](plugins/optional/README.md).
 
 `from` and `to` also accept file paths and URLs directly, so you can point at files without wrapping them in SQL quotes. The bundled S3 storage plugin supports public or authenticated S3 reads and writes. Quote glob patterns, such as `dq from 'data/*.parquet'`, to let DuckDB expand them.
 
 ### Plugins and global configuration
 
-Bundled formats and S3 support are TOML plugins embedded in the binary at build time. Adding a file matching `plugins/*.toml` includes it automatically in subsequent builds. User plugins use the same schema and load without rebuilding dq.
+Bundled formats and S3 support are TOML plugins embedded in the binary at build time. Adding a file matching `plugins/bundled/*.toml` includes it automatically in subsequent builds. Plugins in `plugins/optional/` are available for manual installation and are not embedded or loaded automatically. User plugins use the same schema and load without rebuilding dq.
+
+For example, install the optional YAML plugin:
+
+```bash
+dq install https://github.com/ryanmiville/dq/blob/main/plugins/optional/yaml.toml
+```
+
+YAML stdin currently fails in the DuckDB YAML extension; use `.yaml` or `.yml` file paths for input. After installation, `dq to yaml` and `.yaml`/`.yml` destinations are supported. See the [optional plugin catalog](plugins/optional/README.md) for installation commands and limitations.
 
 Install a user plugin from a URL pointing directly to its TOML file:
 

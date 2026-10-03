@@ -1,6 +1,9 @@
 cmd = '''
+set -e
 temp_dir=$(mktemp -d)
 trap 'rm -rf "$temp_dir"' EXIT
+mkdir -p "$XDG_CONFIG_HOME/dq/plugins"
+cp plugins/optional/yaml.toml "$XDG_CONFIG_HOME/dq/plugins/yaml.toml"
 {dq} from json | {dq} to "$temp_dir/config.yml"
 {dq} from "$temp_dir/config.yml" | {dq} to json
 '''

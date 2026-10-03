@@ -1,7 +1,8 @@
 use std::{env, fs, path::PathBuf};
 
 fn main() {
-    let directory = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap()).join("plugins");
+    let directory =
+        PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap()).join("plugins/bundled");
     println!("cargo:rerun-if-changed={}", directory.display());
     let mut paths = fs::read_dir(&directory)
         .unwrap()
