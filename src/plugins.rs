@@ -1,12 +1,15 @@
 use std::{
     collections::HashMap,
     env, fs,
+    io::Write,
     path::{Path, PathBuf},
+    time::Duration,
 };
 
 use anyhow::{Context, Result, anyhow, bail};
 use duckdb::Connection;
 use serde::{Deserialize, Serialize};
+use ureq::tls::{RootCerts, TlsConfig};
 
 use crate::extensions::load_or_install;
 
@@ -96,12 +99,11 @@ pub struct Registry {
 
 impl Registry {
     pub fn load() -> Result<Self> {
-        let root = env::var_os("XDG_CONFIG_HOME")
-            .filter(|value| !value.is_empty())
-            .map(PathBuf::from)
-            .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
-            .ok_or_else(|| anyhow!("cannot locate global dq config directory"))?
-            .join("dq");
+        Self::load_excluding(None)
+    }
+
+    fn load_excluding(excluded: Option<&Path>) -> Result<Self> {
+        let root = config_directory()?;
         let config_path = root.join("config.toml");
         let config = match fs::read_to_string(&config_path) {
             Ok(text) => toml::from_str::<Config>(&text)
@@ -139,6 +141,9 @@ impl Registry {
                 .collect::<std::io::Result<Vec<_>>>()?;
             paths.sort();
             for path in paths {
+                if excluded.is_some_and(|excluded| path == excluded) {
+                    continue;
+                }
                 if path
                     .extension()
                     .is_some_and(|extension| extension == "toml")
@@ -247,6 +252,110 @@ impl Registry {
         }
         Ok(Vec::new())
     }
+}
+
+fn config_directory() -> Result<PathBuf> {
+    env::var_os("XDG_CONFIG_HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
+        .map(|root| root.join("dq"))
+        .ok_or_else(|| anyhow!("cannot locate global dq config directory"))
+}
+
+pub fn install(url: &str, replace: bool) -> Result<()> {
+    let url = download_url(url)?;
+    let agent = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(60)))
+        .tls_config(
+            TlsConfig::builder()
+                .root_certs(RootCerts::PlatformVerifier)
+                .build(),
+        )
+        .build()
+        .new_agent();
+    let text = agent
+        .get(&url)
+        .call()
+        .with_context(|| format!("failed to download plugin from {url}"))?
+        .body_mut()
+        .read_to_string()
+        .context("failed to read downloaded plugin")?;
+    let plugin = parse_plugin(&text).context("invalid downloaded plugin")?;
+    let id = plugin.id.clone();
+    if id == "."
+        || id == ".."
+        || !id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+    {
+        bail!(
+            "installed plugin id must use letters, digits, '.', '-', or '_' and must not be '.' or '..'"
+        );
+    }
+    let directory = config_directory()?.join("plugins");
+    let path = directory.join(format!("{id}.toml"));
+    if path.try_exists()? && !replace {
+        bail!(
+            "user plugin `{id}` already exists at {}; use --replace to update it",
+            path.display()
+        );
+    }
+    let mut plugins = Registry::load_excluding(Some(&path))?.plugins;
+    plugins.push(plugin);
+    Registry::new(plugins).context(
+        "plugin registration conflict; disable conflicting bundled plugins with disabled_bundled in config.toml",
+    )?;
+    fs::create_dir_all(&directory)
+        .with_context(|| format!("failed to create plugin directory {}", directory.display()))?;
+    let mut file = tempfile::NamedTempFile::new_in(&directory)?;
+    file.write_all(text.as_bytes())?;
+    file.as_file().sync_all()?;
+    let installed = if replace {
+        file.persist(&path)
+    } else {
+        file.persist_noclobber(&path)
+    };
+    installed.with_context(|| format!("failed to install plugin `{id}` at {}", path.display()))?;
+    println!("Installed plugin `{id}` at {}", path.display());
+    Ok(())
+}
+
+fn download_url(url: &str) -> Result<String> {
+    let url = url.split('#').next().unwrap_or(url);
+    let uri: ureq::http::Uri = url
+        .parse()
+        .context("expected an http or https URL pointing to a plugin TOML file")?;
+    if !matches!(uri.scheme_str(), Some("http" | "https")) || uri.host().is_none() {
+        bail!("expected an http or https URL pointing to a plugin TOML file");
+    }
+    if uri.host().is_some_and(|host| {
+        host.eq_ignore_ascii_case("github.com") || host.eq_ignore_ascii_case("www.github.com")
+    }) {
+        let mut parts = uri.path().trim_start_matches('/').splitn(4, '/');
+        match (parts.next(), parts.next(), parts.next(), parts.next()) {
+            (Some(owner), Some(repository), Some("blob" | "raw"), Some(file))
+                if !owner.is_empty()
+                    && !repository.is_empty()
+                    && file.split_once('/').is_some_and(|(reference, path)| {
+                        !reference.is_empty() && !path.is_empty()
+                    }) =>
+            {
+                return Ok(format!(
+                    "https://raw.githubusercontent.com/{owner}/{repository}/{file}"
+                ));
+            }
+            (Some(owner), Some(repository), Some(marker), Some(file))
+                if !owner.is_empty()
+                    && !repository.is_empty()
+                    && !matches!(marker, "blob" | "raw")
+                    && !file.is_empty() => {}
+            _ => bail!(
+                "GitHub URL must point to a file: https://github.com/owner/repo/blob/ref/plugin.toml"
+            ),
+        }
+    }
+    Ok(url.into())
 }
 
 fn claim(

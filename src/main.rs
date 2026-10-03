@@ -23,6 +23,15 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    #[command(about = "Install a custom plugin from a TOML URL or GitHub file URL")]
+    Install {
+        #[arg(value_name = "URL", help = "URL pointing to a plugin TOML file")]
+        url: String,
+
+        #[arg(long, help = "Replace an existing user plugin")]
+        replace: bool,
+    },
+
     #[command(
         about = "Read data from stdin, a file, or a URL and output a query plan",
         long_about = "Read data from stdin, a file, or a URL and output a query plan.\n\nBundled formats: csv, json, json-array, yaml. User plugins can add formats and URL schemes. Use --expr for raw DuckDB read expressions."
@@ -121,6 +130,7 @@ fn main() {
 fn run() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
+        Command::Install { url, replace } => plugins::install(&url, replace),
         Command::From { format, expr } => cmd::from(InputFormat::parse(format, expr)?),
         Command::To { format, expr } => cmd::to(&OutputFormat::parse(format, expr)?),
         Command::Sql => cmd::sql(),

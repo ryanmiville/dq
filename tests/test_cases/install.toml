@@ -1,0 +1,319 @@
+cmd = '''
+set -e
+scenario=$(cat)
+temp_dir=$(mktemp -d)
+export XDG_CONFIG_HOME="$temp_dir/config"
+export NO_PROXY="127.0.0.1,localhost"
+unset no_proxy ALL_PROXY all_proxy HTTPS_PROXY https_proxy HTTP_PROXY http_proxy
+server_pid=""
+trap 'if [ -n "$server_pid" ]; then kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true; fi; rm -rf "$temp_dir"' EXIT
+mkdir -p "$XDG_CONFIG_HOME/dq"
+cat > "$temp_dir/download.toml" <<'PLUGIN'
+api_version = 1
+id = "custom"
+kind = "format"
+[[formats]]
+name = "custom"
+suffixes = ["custom"]
+read = "read_json_auto({{path}})"
+[formats.write]
+kind = "copy"
+options = "FORMAT JSON, ARRAY false"
+[[formats]]
+name = "custom-array"
+[formats.write]
+kind = "copy"
+options = "FORMAT JSON, ARRAY true"
+PLUGIN
+python3 - "$temp_dir" <<'PY' > "$temp_dir/server.log" 2>&1 &
+from functools import partial
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+class Handler(SimpleHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/redirect":
+            self.send_response(302)
+            self.send_header("Location", "/download.toml")
+            self.end_headers()
+        elif self.path == "/truncated":
+            self.send_response(200)
+            self.send_header("Content-Length", "10000")
+            self.end_headers()
+            self.wfile.write(b'api_version = 1\nid = "custom"\n')
+            self.close_connection = True
+        else:
+            super().do_GET()
+    def do_CONNECT(self):
+        (root / "connect").write_text(self.path)
+        self.send_error(502)
+
+server = HTTPServer(("127.0.0.1", 0), partial(Handler, directory=str(root)))
+(root / "port").write_text(str(server.server_port))
+server.serve_forever()
+PY
+server_pid=$!
+for attempt in {1..300}; do
+    [ -s "$temp_dir/port" ] && break
+    kill -0 "$server_pid" 2>/dev/null || break
+    sleep 0.1
+done
+if [ ! -s "$temp_dir/port" ]; then
+    cat "$temp_dir/server.log" >&2
+    printf 'HTTP fixture server did not become ready\n' >&2
+    exit 1
+fi
+port=$(cat "$temp_dir/port")
+url="http://127.0.0.1:$port/download.toml"
+args=()
+id=custom
+format=custom
+download="$temp_dir/download.toml"
+old="$XDG_CONFIG_HOME/dq/plugins/custom.toml"
+case "$scenario" in
+    replace|repair|invalid_replace|conflicting_replace|http_failure|truncated)
+        mkdir -p "$XDG_CONFIG_HOME/dq/plugins"
+        sed 's/read_json_auto/read_csv/' "$temp_dir/download.toml" > "$old"
+        [ "$scenario" != repair ] || printf 'invalid TOML' > "$old"
+        cp "$old" "$temp_dir/previous.toml"
+        args=(--replace)
+        ;;
+    duplicate)
+        mkdir -p "$XDG_CONFIG_HOME/dq/plugins"
+        cp "$temp_dir/download.toml" "$old"
+        cp "$old" "$temp_dir/previous.toml"
+        ;;
+esac
+case "$scenario" in
+    redirect) url="http://127.0.0.1:$port/redirect" ;;
+    invalid|invalid_replace)
+        sed 's/api_version = 1/api_version = 99/' "$temp_dir/download.toml" > "$temp_dir/invalid.toml"
+        url="http://127.0.0.1:$port/invalid.toml"
+        ;;
+    conflict|conflicting_replace)
+        sed 's/name = "custom"/name = "csv"/' "$temp_dir/download.toml" > "$temp_dir/conflict.toml"
+        url="http://127.0.0.1:$port/conflict.toml"
+        ;;
+    http_failure) url="http://127.0.0.1:$port/missing.toml" ;;
+    truncated) url="http://127.0.0.1:$port/truncated" ;;
+    unsafe_id)
+        sed 's/id = "custom"/id = "..\/outside"/' "$temp_dir/download.toml" > "$temp_dir/unsafe.toml"
+        url="http://127.0.0.1:$port/unsafe.toml"
+        ;;
+    builtin|disabled_builtin)
+        sed -e 's/id = "custom"/id = "csv"/' -e 's/name = "custom"/name = "csv"/' "$temp_dir/download.toml" > "$temp_dir/builtin.toml"
+        url="http://127.0.0.1:$port/builtin.toml"
+        download="$temp_dir/builtin.toml"
+        id=csv
+        format=csv
+        [ "$scenario" != disabled_builtin ] || printf 'disabled_bundled = ["csv"]\n' > "$XDG_CONFIG_HOME/dq/config.toml"
+        ;;
+    deferred_setup)
+        cat >> "$temp_dir/download.toml" <<'PLUGIN'
+[[setup]]
+kind = "extension"
+name = "dq_extension_that_does_not_exist"
+[[setup]]
+kind = "sql"
+sql = "SELECT {{env:DQ_INSTALL_MISSING_VALUE}}"
+PLUGIN
+        ;;
+    storage)
+        cat > "$temp_dir/download.toml" <<'PLUGIN'
+api_version = 1
+id = "custom"
+kind = "storage"
+schemes = ["custom"]
+[[setup]]
+kind = "sql"
+sql = "SELECT {{env:DQ_INSTALL_MISSING_VALUE}}"
+PLUGIN
+        ;;
+    invalid_url) url="someone/repository" ;;
+    github_url)
+        export ALL_PROXY="http://127.0.0.1:$port"
+        url="https://github.com/someone/formats/blob/v1.2.0/plugins/rows.toml?plain=1#L1"
+        ;;
+    github_raw_url)
+        export ALL_PROXY="http://127.0.0.1:$port"
+        url="https://github.com/someone/formats/raw/feature/topic/plugins/rows.toml"
+        ;;
+    github_repo) url="https://github.com/someone/formats" ;;
+esac
+status=0
+{dq} install "${args[@]}" "$url" > "$temp_dir/install.out" 2> "$temp_dir/install.err" || status=$?
+if [ "$status" -ne 0 ]; then
+    if [ -f "$temp_dir/previous.toml" ]; then
+        cmp "$temp_dir/previous.toml" "$old"
+    else
+        test ! -d "$XDG_CONFIG_HOME/dq/plugins"
+    fi
+    case "$scenario" in
+        github_url|github_raw_url) test "$(cat "$temp_dir/connect")" = 'raw.githubusercontent.com:443' ;;
+    esac
+    cat "$temp_dir/install.err" >&2
+    exit "$status"
+fi
+cmp "$download" "$XDG_CONFIG_HOME/dq/plugins/$id.toml"
+grep -Fq 'Installed plugin' "$temp_dir/install.out"
+case "$scenario" in
+    deferred_setup) {dq} from custom < /dev/null | {dq} sql ;;
+    storage) {dq} from custom://bucket/data.parquet | {dq} sql ;;
+    *) printf '{"name":"Ada","age":37}\n' | {dq} from "$format" | {dq} to "$format" ;;
+esac
+'''
+
+[[cases]]
+name = "installs_and_uses_format"
+input = "install"
+[cases.expect]
+kind = "exact"
+stdout = '{"name":"Ada","age":37}'
+
+[[cases]]
+name = "follows_redirect"
+input = "redirect"
+[cases.expect]
+kind = "exact"
+stdout = '{"name":"Ada","age":37}'
+
+[[cases]]
+name = "replaces_installed_plugin"
+input = "replace"
+[cases.expect]
+kind = "exact"
+stdout = '{"name":"Ada","age":37}'
+
+[[cases]]
+name = "repairs_invalid_installed_plugin"
+input = "repair"
+[cases.expect]
+kind = "exact"
+stdout = '{"name":"Ada","age":37}'
+
+[[cases]]
+name = "requires_explicit_replacement"
+input = "duplicate"
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "use --replace to update it"
+
+[[cases]]
+name = "rejects_invalid_plugin"
+input = "invalid"
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "unsupported plugin API version 99"
+
+[[cases]]
+name = "preserves_plugin_on_invalid_replacement"
+input = "invalid_replace"
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "unsupported plugin API version 99"
+
+[[cases]]
+name = "rejects_registration_conflict"
+input = "conflict"
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "conflicting format name `csv`: plugins `csv` and `custom`"
+
+[[cases]]
+name = "preserves_plugin_on_conflicting_replacement"
+input = "conflicting_replace"
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "conflicting format name `csv`: plugins `csv` and `custom`"
+
+[[cases]]
+name = "preserves_plugin_on_http_failure"
+input = "http_failure"
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "404"
+
+[[cases]]
+name = "preserves_plugin_on_partial_download"
+input = "truncated"
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "failed to read downloaded plugin"
+
+[[cases]]
+name = "rejects_filename_unsafe_id"
+input = "unsafe_id"
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "installed plugin id must use letters, digits"
+
+[[cases]]
+name = "reports_bundled_conflict_configuration"
+input = "builtin"
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "disabled_bundled in config.toml"
+
+[[cases]]
+name = "installs_disabled_bundled_replacement"
+input = "disabled_builtin"
+[cases.expect]
+kind = "exact"
+stdout = '{"name":"Ada","age":37}'
+
+[[cases]]
+name = "defers_extensions_and_setup"
+input = "deferred_setup"
+[cases.expect]
+kind = "exact"
+stdout = "SELECT * FROM read_json_auto('/dev/stdin');"
+
+[[cases]]
+name = "installs_storage_plugin"
+input = "storage"
+[cases.expect]
+kind = "exact"
+stdout = "SELECT * FROM 'custom://bucket/data.parquet';"
+
+[[cases]]
+name = "rejects_repository_shorthand"
+input = "invalid_url"
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "expected an http or https URL"
+
+[[cases]]
+name = "converts_github_file_url"
+input = "github_url"
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "failed to download plugin from https://raw.githubusercontent.com/someone/formats/v1.2.0/plugins/rows.toml"
+
+[[cases]]
+name = "converts_github_raw_url_with_slash_in_ref"
+input = "github_raw_url"
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "failed to download plugin from https://raw.githubusercontent.com/someone/formats/feature/topic/plugins/rows.toml"
+
+[[cases]]
+name = "requires_github_file_url"
+input = "github_repo"
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "GitHub URL must point to a file"
