@@ -1,191 +1,154 @@
-use std::path::Path;
+use std::{env, fs, path::Path};
 
-#[derive(Debug, Eq, PartialEq)]
-pub enum InputFormat {
-    Csv,
-    Json,
-    JsonArray,
-    Yaml,
-    Path(String),
-    S3(String),
-    Passthrough(String),
+use anyhow::{Context, Result, bail};
+
+use crate::{
+    plan::Source,
+    plugins::{Format, Plugin, Registry, Setup, Writer, bind_path, sql_literal},
+};
+
+pub struct InputFormat {
+    pub source: Source,
+    pub setup: Vec<Setup>,
 }
 
-#[derive(Debug, Eq, PartialEq)]
-pub enum OutputFormat {
-    Csv,
-    Json,
-    JsonArray,
-    Yaml,
-    Pretty,
-    Path(String),
-    Passthrough(String),
+pub struct OutputFormat {
+    pub execution: OutputExecution,
+    pub setup: Vec<Setup>,
 }
 
 pub enum OutputExecution {
     Copy(String),
-    Pretty,
+    Pretty(String),
 }
 
 impl InputFormat {
-    pub fn parse(value: Option<String>, expr: Option<String>) -> Self {
+    pub fn parse(value: Option<String>, expr: Option<String>) -> Result<Self> {
+        let registry = Registry::load()?;
         match (value, expr) {
-            (_, Some(expr)) => Self::Passthrough(expr),
-            (Some(value), None) => Self::parse_arg(value),
+            (_, Some(read_expr)) => {
+                let setup = registry.setup_for_expression(&read_expr)?;
+                Ok(Self {
+                    source: Source::Stream { read_expr },
+                    setup,
+                })
+            }
+            (Some(value), None) => {
+                if let Some((plugin, format)) = registry.named(&value) {
+                    let read = format.read.as_ref().ok_or_else(|| {
+                        anyhow::anyhow!("format `{}` does not support reading", format.name)
+                    })?;
+                    return Ok(Self {
+                        source: Source::Stream {
+                            read_expr: bind_path(read, "/dev/stdin")?,
+                        },
+                        setup: registry.setup_for("/dev/stdin", Some(plugin)),
+                    });
+                }
+                if file_like(&value) || value.contains("://") {
+                    let format = registry.for_path(&value);
+                    if let Some((_, format)) = format
+                        && format.read.is_none()
+                    {
+                        bail!("format `{}` does not support reading", format.name);
+                    }
+                    let path = if value.contains("://") {
+                        value
+                    } else {
+                        resolve_existing_path(&value)?
+                    };
+                    let read_expr = format
+                        .and_then(|(_, format)| format.read.as_ref())
+                        .map(|read| bind_path(read, &path))
+                        .transpose()?;
+                    let setup = registry.setup_for(&path, format.map(|(plugin, _)| plugin));
+                    return Ok(Self {
+                        source: Source::Path { path, read_expr },
+                        setup,
+                    });
+                }
+                let setup = registry.setup_for_expression(&value)?;
+                Ok(Self {
+                    source: Source::Stream { read_expr: value },
+                    setup,
+                })
+            }
             (None, None) => unreachable!("clap guarantees either a positional value or --expr"),
-        }
-    }
-
-    fn parse_arg(value: String) -> Self {
-        match value.to_ascii_lowercase().as_str() {
-            "csv" => Self::Csv,
-            "json" => Self::Json,
-            "json-array" => Self::JsonArray,
-            "yaml" => Self::Yaml,
-            _ if is_s3_uri(&value) => Self::S3(value),
-            _ if file_like(&value) => Self::Path(value),
-            _ => Self::Passthrough(value),
-        }
-    }
-
-    pub fn read_fn(&self) -> String {
-        match self {
-            Self::Json | Self::JsonArray => "read_json_auto('/dev/stdin')".to_string(),
-            Self::Csv => "read_csv('/dev/stdin')".to_string(),
-            Self::Yaml => "read_yaml('/dev/stdin')".to_string(),
-            Self::Path(path) | Self::S3(path) => sql_string_literal(path),
-            Self::Passthrough(text) => text.clone(),
         }
     }
 }
 
 impl OutputFormat {
-    pub fn parse(value: Option<String>, expr: Option<String>) -> Self {
+    pub fn parse(value: Option<String>, expr: Option<String>) -> Result<Self> {
+        let registry = Registry::load()?;
         match (value, expr) {
-            (_, Some(expr)) => Self::Passthrough(expr),
-            (Some(value), None) => Self::parse_arg(value),
+            (_, Some(expr)) => Ok(Self {
+                execution: OutputExecution::Copy(expr),
+                setup: Vec::new(),
+            }),
+            (Some(value), None) => {
+                let named = registry.named(&value);
+                let file = file_like(&value) || value.contains("://");
+                if named.is_none() && !file {
+                    return Ok(Self {
+                        execution: OutputExecution::Copy(value),
+                        setup: Vec::new(),
+                    });
+                }
+                let path = if named.is_some() {
+                    "/dev/stdout"
+                } else {
+                    &value
+                };
+                let format = named.or_else(|| registry.for_path(&value));
+                Self::resolve(&registry, path, format)
+            }
             (None, None) => unreachable!("clap guarantees either a positional value or --expr"),
         }
     }
 
-    fn parse_arg(value: String) -> Self {
-        match value.to_ascii_lowercase().as_str() {
-            "csv" => Self::Csv,
-            "json" => Self::Json,
-            "json-array" => Self::JsonArray,
-            "yaml" => Self::Yaml,
-            "pretty" => Self::Pretty,
-            _ if file_like(&value) => Self::Path(value),
-            _ => Self::Passthrough(value),
-        }
+    pub fn terminal() -> Result<Self> {
+        let registry = Registry::load()?;
+        let format = registry.named("pretty").ok_or_else(|| {
+            anyhow::anyhow!("terminal output requires a registered `pretty` format")
+        })?;
+        Self::resolve(&registry, "/dev/stdout", Some(format))
     }
 
-    pub fn execution(&self) -> OutputExecution {
-        match self {
-            Self::Pretty => OutputExecution::Pretty,
-            Self::Json => {
-                OutputExecution::Copy("'/dev/stdout' (FORMAT JSON, ARRAY false)".to_string())
-            }
-            Self::JsonArray => {
-                OutputExecution::Copy("'/dev/stdout' (FORMAT JSON, ARRAY true)".to_string())
-            }
-            Self::Yaml => OutputExecution::Copy("'/dev/stdout' (FORMAT YAML)".to_string()),
-            Self::Csv => OutputExecution::Copy(
-                "'/dev/stdout' (FORMAT csv, DELIMITER ',', HEADER)".to_string(),
-            ),
-            Self::Path(path) if is_yaml_path(path) => {
-                OutputExecution::Copy(format!("{} (FORMAT YAML)", sql_string_literal(path)))
-            }
-            Self::Path(path) => OutputExecution::Copy(sql_string_literal(path)),
-            Self::Passthrough(text) => OutputExecution::Copy(text.clone()),
-        }
-    }
-
-    pub fn requires_yaml(&self) -> bool {
-        match self {
-            Self::Yaml => true,
-            Self::Path(path) => is_yaml_path(path),
-            _ => false,
-        }
-    }
-}
-
-pub fn is_yaml_path(value: &str) -> bool {
-    Path::new(value)
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| {
-            extension.eq_ignore_ascii_case("yaml") || extension.eq_ignore_ascii_case("yml")
+    fn resolve(
+        registry: &Registry,
+        path: &str,
+        format: Option<(&Plugin, &Format)>,
+    ) -> Result<Self> {
+        let execution = match format {
+            Some((_, format)) => match format.write.as_ref() {
+                Some(Writer::Copy { options }) => OutputExecution::Copy(format!(
+                    "{} ({})",
+                    sql_literal(path),
+                    bind_path(options, path)?
+                )),
+                Some(Writer::Duckbox) => OutputExecution::Pretty(path.into()),
+                None => bail!("format `{}` does not support writing", format.name),
+            },
+            None => OutputExecution::Copy(sql_literal(path)),
+        };
+        Ok(Self {
+            execution,
+            setup: registry.setup_for(path, format.map(|(plugin, _)| plugin)),
         })
-}
-
-fn is_s3_uri(value: &str) -> bool {
-    value.starts_with("s3://")
+    }
 }
 
 fn file_like(value: &str) -> bool {
     Path::new(value).extension().is_some()
 }
 
-fn sql_string_literal(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "''"))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{InputFormat, OutputExecution, OutputFormat};
-
-    #[test]
-    fn parses_input_presets_before_paths() {
-        assert_eq!(InputFormat::parse_arg("json".into()), InputFormat::Json);
-        assert_eq!(InputFormat::parse_arg("csv".into()), InputFormat::Csv);
-    }
-
-    #[test]
-    fn parses_output_pretty_preset() {
-        assert_eq!(
-            OutputFormat::parse_arg("pretty".into()),
-            OutputFormat::Pretty
-        );
-        assert!(matches!(
-            OutputFormat::Pretty.execution(),
-            OutputExecution::Pretty
-        ));
-    }
-
-    #[test]
-    fn parses_paths_without_sql_quotes() {
-        assert_eq!(
-            InputFormat::parse_arg("../testdata.json".into()),
-            InputFormat::Path("../testdata.json".into())
-        );
-        assert_eq!(
-            OutputFormat::parse_arg("out.csv".into()),
-            OutputFormat::Path("out.csv".into())
-        );
-    }
-
-    #[test]
-    fn parses_s3_uris_with_or_without_file_extensions() {
-        assert_eq!(
-            InputFormat::parse_arg("s3://bucket/data.parquet".into()),
-            InputFormat::S3("s3://bucket/data.parquet".into())
-        );
-        assert_eq!(
-            InputFormat::parse_arg("s3://bucket/dataset".into()),
-            InputFormat::S3("s3://bucket/dataset".into())
-        );
-    }
-
-    #[test]
-    fn preserves_common_passthrough_expressions() {
-        assert_eq!(
-            InputFormat::parse_arg("read_csv('/dev/stdin')".into()),
-            InputFormat::Passthrough("read_csv('/dev/stdin')".into())
-        );
-        assert_eq!(
-            OutputFormat::parse_arg("'/dev/stdout' (FORMAT CSV, HEADER)".into()),
-            OutputFormat::Passthrough("'/dev/stdout' (FORMAT CSV, HEADER)".into())
-        );
-    }
+fn resolve_existing_path(path: &str) -> Result<String> {
+    let absolute = if path.contains(['*', '?', '[']) {
+        env::current_dir()?.join(path)
+    } else {
+        fs::canonicalize(Path::new(path))
+            .with_context(|| format!("failed to resolve input path `{path}`"))?
+    };
+    Ok(absolute.to_string_lossy().into_owned())
 }

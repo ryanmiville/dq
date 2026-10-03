@@ -1,0 +1,26 @@
+cmd = '''
+temp_dir=$(mktemp -d)
+trap 'rm -rf "$temp_dir"' EXIT
+export XDG_CONFIG_HOME="$temp_dir"
+mkdir -p "$XDG_CONFIG_HOME/dq/plugins"
+cat > "$XDG_CONFIG_HOME/dq/plugins/environment.toml" <<'PLUGIN'
+api_version = 1
+id = "environment"
+kind = "format"
+[[formats]]
+name = "environment"
+read = "read_json_auto({{path}})"
+[[setup]]
+kind = "sql"
+requires_env = ["DQ_PLUGIN_OPTIONAL_MISSING"]
+sql = "SELECT error('this step must be skipped')"
+PLUGIN
+unset DQ_PLUGIN_OPTIONAL_MISSING
+{dq} from environment | {dq} to json
+'''
+
+[[cases]]
+name = "skips_absent_optional_environment"
+input = "{\"name\":\"Ada\"}"
+[cases.expect]
+kind = "same"

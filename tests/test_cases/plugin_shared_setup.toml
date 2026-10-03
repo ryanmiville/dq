@@ -1,0 +1,30 @@
+cmd = '''
+temp_dir=$(mktemp -d)
+trap 'rm -rf "$temp_dir"' EXIT
+export XDG_CONFIG_HOME="$temp_dir"
+mkdir -p "$XDG_CONFIG_HOME/dq/plugins"
+cat > "$XDG_CONFIG_HOME/dq/plugins/shared.toml" <<'PLUGIN'
+api_version = 1
+id = "shared"
+kind = "format"
+[[formats]]
+name = "shared-input"
+read = "(SELECT input.*, state.initialized FROM read_json_auto({{path}}) AS input CROSS JOIN plugin_state AS state)"
+[[formats]]
+name = "shared-output"
+[formats.write]
+kind = "copy"
+options = "FORMAT JSON, ARRAY false"
+[[setup]]
+kind = "sql"
+sql = "CREATE TEMP TABLE plugin_state AS SELECT 1 AS initialized"
+PLUGIN
+{dq} from shared-input | {dq} where "age > 40" | {dq} select "name, initialized" | {dq} to shared-output
+'''
+
+[[cases]]
+name = "once_across_variants_and_stages"
+input = "{\"name\":\"Ada\",\"age\":37}\n{\"name\":\"Linus\",\"age\":54}\n"
+[cases.expect]
+kind = "exact"
+stdout = "{\"name\":\"Linus\",\"initialized\":1}"

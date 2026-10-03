@@ -1,0 +1,27 @@
+cmd = '''
+temp_dir=$(mktemp -d)
+trap 'rm -rf "$temp_dir"' EXIT
+export XDG_CONFIG_HOME="$temp_dir"
+mkdir -p "$XDG_CONFIG_HOME/dq/plugins"
+mkdir -p "$XDG_CONFIG_HOME/dq/extra"
+printf 'plugin_dirs = ["extra"]
+' > "$XDG_CONFIG_HOME/dq/config.toml"
+cat > "$XDG_CONFIG_HOME/dq/extra/rows.toml" <<'PLUGIN'
+api_version = 1
+id = "rows"
+kind = "format"
+[[formats]]
+name = "rows"
+suffixes = ["rows"]
+read = "read_json_auto({{path}})"
+PLUGIN
+cat > "$temp_dir/owner's-file.rows"
+{dq} from "$temp_dir/owner's-*.rows" | {dq} where "age > 40" | {dq} to json
+'''
+
+[[cases]]
+name = "extra_directory_and_quoted_glob"
+input = "{\"name\":\"Ada\",\"age\":37}\n{\"name\":\"Linus\",\"age\":54}\n"
+[cases.expect]
+kind = "exact"
+stdout = "{\"name\":\"Linus\",\"age\":54}"

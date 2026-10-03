@@ -147,8 +147,10 @@ impl Runner {
     }
 
     pub fn output(self) -> io::Result<Output> {
+        let config_home = tempfile::tempdir()?;
         let mut command = Command::new("bash");
         command
+            .env("XDG_CONFIG_HOME", config_home.path())
             .arg("-o")
             .arg("pipefail")
             .arg("-c")

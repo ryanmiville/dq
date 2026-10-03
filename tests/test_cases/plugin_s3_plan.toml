@@ -1,0 +1,8 @@
+cmd = "{dq} from s3://bucket/path/data.parquet | {dq} sql"
+
+[[cases]]
+name = "preserves_uri_in_source_plan"
+input = ""
+[cases.expect]
+kind = "exact"
+stdout = "SELECT * FROM 's3://bucket/path/data.parquet';"

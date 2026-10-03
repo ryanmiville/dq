@@ -1,0 +1,28 @@
+api_version = 1
+id = "s3"
+kind = "storage"
+schemes = ["s3"]
+
+[[setup]]
+kind = "extension"
+name = "httpfs"
+
+[[setup]]
+kind = "sql"
+requires_env = ["DQ_CA_CERT_FILE"]
+sql = "SET ca_cert_file = {{env:DQ_CA_CERT_FILE}};"
+
+[[setup]]
+kind = "extension"
+name = "aws"
+
+[[setup]]
+kind = "sql"
+sql = """
+CREATE TEMPORARY SECRET dq_plugin_s3 (
+    TYPE s3,
+    PROVIDER credential_chain,
+    VALIDATION 'none',
+    REFRESH auto
+);
+"""

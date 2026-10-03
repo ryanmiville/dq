@@ -1,0 +1,33 @@
+cmd = '''
+temp_dir=$(mktemp -d)
+trap 'rm -rf "$temp_dir"' EXIT
+export XDG_CONFIG_HOME="$temp_dir"
+mkdir -p "$XDG_CONFIG_HOME/dq/plugins"
+printf 'disabled_bundled = ["yaml"]
+' > "$XDG_CONFIG_HOME/dq/config.toml"
+cat > "$XDG_CONFIG_HOME/dq/plugins/yaml.toml" <<'PLUGIN'
+api_version = 1
+id = "user-yaml"
+kind = "format"
+[[formats]]
+name = "yaml"
+suffixes = ["yaml", "yml"]
+read = "read_yaml({{path}})"
+[formats.write]
+kind = "copy"
+options = "FORMAT YAML"
+[[setup]]
+kind = "extension"
+name = "yaml"
+repository = "community"
+PLUGIN
+{dq} from json | {dq} to "$temp_dir/config.yml"
+{dq} from "$temp_dir/config.yml" | {dq} to yaml > "$temp_dir/config.yaml"
+{dq} from "$temp_dir/config.yaml" | {dq} to json
+'''
+
+[[cases]]
+name = "user_extension_and_both_suffixes"
+input = "{\"name\":\"api\",\"enabled\":true,\"server\":{\"host\":\"localhost\",\"port\":8080},\"features\":[\"auth\",\"metrics\"],\"optional\":null}"
+[cases.expect]
+kind = "same"

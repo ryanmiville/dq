@@ -1,0 +1,23 @@
+cmd = '''
+temp_dir=$(mktemp -d)
+trap 'rm -rf "$temp_dir"' EXIT
+export XDG_CONFIG_HOME="$temp_dir"
+mkdir -p "$XDG_CONFIG_HOME/dq/plugins"
+cat > "$XDG_CONFIG_HOME/dq/plugins/probe.toml" <<'PLUGIN'
+api_version = 1
+id = "s3-probe"
+kind = "format"
+[[formats]]
+name = "s3-probe"
+suffixes = ["s3probe"]
+read = "(SELECT count(*) AS matching_secrets FROM which_secret({{path}}, 's3'))"
+PLUGIN
+{dq} from s3://bucket/setup.s3probe | {dq} to json
+'''
+
+[[cases]]
+name = "initializes_storage_before_format_reader"
+input = ""
+[cases.expect]
+kind = "exact"
+stdout = "{\"matching_secrets\":1}"

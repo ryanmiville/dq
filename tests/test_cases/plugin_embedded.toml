@@ -1,0 +1,15 @@
+cmd = '''
+temp_dir=$(mktemp -d)
+trap 'rm -rf "$temp_dir"' EXIT
+export XDG_CONFIG_HOME="$temp_dir"
+mkdir -p "$XDG_CONFIG_HOME/dq/plugins"
+cd "$temp_dir"
+{dq} from json | {dq} to json-array
+'''
+
+[[cases]]
+name = "works_outside_source_tree"
+input = "{\"name\":\"Ada\",\"age\":37}"
+[cases.expect]
+kind = "exact"
+stdout = "[\n{\"name\":\"Ada\",\"age\":37}\n]"

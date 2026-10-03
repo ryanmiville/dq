@@ -1,0 +1,16 @@
+api_version = 1
+id = "yaml"
+kind = "format"
+
+[[setup]]
+kind = "extension"
+name = "yaml"
+repository = "community"
+
+[[formats]]
+name = "yaml"
+suffixes = ["yaml", "yml"]
+read = "read_yaml({{path}})"
+[formats.write]
+kind = "copy"
+options = "FORMAT YAML"

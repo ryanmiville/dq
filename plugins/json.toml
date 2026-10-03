@@ -1,0 +1,18 @@
+api_version = 1
+id = "json"
+kind = "format"
+
+[[formats]]
+name = "json"
+suffixes = ["json", "jsonl", "ndjson"]
+read = "read_json_auto({{path}})"
+[formats.write]
+kind = "copy"
+options = "FORMAT JSON, ARRAY false"
+
+[[formats]]
+name = "json-array"
+read = "read_json_auto({{path}})"
+[formats.write]
+kind = "copy"
+options = "FORMAT JSON, ARRAY true"

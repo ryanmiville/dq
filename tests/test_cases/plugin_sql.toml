@@ -1,0 +1,28 @@
+cmd = '''
+temp_dir=$(mktemp -d)
+trap 'rm -rf "$temp_dir"' EXIT
+export XDG_CONFIG_HOME="$temp_dir"
+mkdir -p "$XDG_CONFIG_HOME/dq/plugins"
+cat > "$XDG_CONFIG_HOME/dq/plugins/lazy.toml" <<'PLUGIN'
+api_version = 1
+id = "lazy"
+kind = "format"
+[[formats]]
+name = "lazy"
+read = "read_json_auto({{path}})"
+[[setup]]
+kind = "extension"
+name = "dq_plugin_that_does_not_exist"
+[[setup]]
+kind = "sql"
+sql = "SELECT {{env:DQ_PLUGIN_MISSING_FOR_SQL}}"
+PLUGIN
+{dq} from lazy | {dq} where "age > 40" | {dq} sql
+'''
+
+[[cases]]
+name = "does_not_execute_setup"
+input = "invalid json"
+[cases.expect]
+kind = "exact"
+stdout = "SELECT * FROM (SELECT * FROM read_json_auto('/dev/stdin')) AS q WHERE age > 40;"

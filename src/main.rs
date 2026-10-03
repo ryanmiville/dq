@@ -2,7 +2,7 @@ mod cmd;
 mod extensions;
 mod format;
 mod plan;
-mod storage;
+mod plugins;
 mod stream;
 
 use anyhow::Result;
@@ -23,13 +23,16 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Read data from stdin, a file, or S3 and output a query plan
-    ///
-    /// Presets: csv, json, json-array, yaml. File paths and s3:// URIs are treated as sources.
-    /// Use --expr for raw DuckDB read expressions.
+    #[command(
+        about = "Read data from stdin, a file, or a URL and output a query plan",
+        long_about = "Read data from stdin, a file, or a URL and output a query plan.\n\nBundled formats: csv, json, json-array, yaml. User plugins can add formats and URL schemes. Use --expr for raw DuckDB read expressions."
+    )]
     From {
-        /// Input format preset, input file path, or s3:// URI
-        #[arg(value_name = "FORMAT|PATH|S3_URI", required_unless_present = "expr")]
+        #[arg(
+            value_name = "FORMAT|PATH|URL",
+            required_unless_present = "expr",
+            help = "Input format name, file path, or URL"
+        )]
         format: Option<String>,
 
         /// Raw DuckDB read expression (escape hatch for advanced use)
@@ -37,13 +40,16 @@ enum Command {
         expr: Option<String>,
     },
 
-    /// Read a query plan from stdin and write query results in the given format
-    ///
-    /// Presets: csv, json, json-array, yaml, pretty. Any other path is treated as a
-    /// file destination. Use --expr for raw DuckDB COPY expressions.
+    #[command(
+        about = "Read a query plan from stdin and write query results in the given format",
+        long_about = "Read a query plan from stdin and write query results in the given format.\n\nBundled formats: csv, json, json-array, yaml, pretty. User plugins can add formats and URL schemes. Use --expr for raw DuckDB COPY expressions."
+    )]
     To {
-        /// Output format preset or output file path
-        #[arg(value_name = "FORMAT|PATH", required_unless_present = "expr")]
+        #[arg(
+            value_name = "FORMAT|PATH|URL",
+            required_unless_present = "expr",
+            help = "Output format name, file path, or URL"
+        )]
         format: Option<String>,
 
         /// Raw DuckDB COPY expression (escape hatch for advanced use)
@@ -115,8 +121,8 @@ fn main() {
 fn run() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::From { format, expr } => cmd::from(&InputFormat::parse(format, expr)),
-        Command::To { format, expr } => cmd::to(&OutputFormat::parse(format, expr)),
+        Command::From { format, expr } => cmd::from(InputFormat::parse(format, expr)?),
+        Command::To { format, expr } => cmd::to(&OutputFormat::parse(format, expr)?),
         Command::Sql => cmd::sql(),
         Command::Select { columns } => cmd::select(&columns),
         Command::Where { clause } => cmd::where_clause(&clause),

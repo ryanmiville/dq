@@ -1,14 +1,12 @@
 use std::{
     env, fs,
     io::{self, IsTerminal, Write},
-    path::Path,
 };
 
 use crate::{
-    extensions::{self, Extension, load_or_install},
     format::{InputFormat, OutputExecution, OutputFormat},
     plan::{Op, Plan},
-    storage,
+    plugins,
     stream::{
         duplicate_stdin, finish_stdin_payload, is_broken_pipe, prepare_stdin_payload,
         read_plan_header, write_plan_and_payload,
@@ -28,7 +26,8 @@ pub fn to(format: &OutputFormat) -> Result<()> {
         None
     };
 
-    let execution = open_connection(&plan).and_then(|conn| execute_to(&conn, &plan, format));
+    let execution =
+        open_connection(&plan, format).and_then(|conn| execute_to(&conn, &plan, format));
     finish_stdin_payload(payload_thread);
     match execution {
         Err(error) if is_broken_pipe(&error) => Ok(()),
@@ -50,12 +49,20 @@ pub fn sql() -> Result<()> {
 }
 
 fn execute_to(conn: &Connection, plan: &Plan, format: &OutputFormat) -> Result<()> {
-    if format.requires_yaml() {
-        load_or_install(conn, Extension::Yaml)?;
-    }
-    match format.execution() {
-        OutputExecution::Copy(destination) => execute_copy(conn, plan, &destination),
-        OutputExecution::Pretty => print_pretty_query(conn, &plan.compile_sql()),
+    match &format.execution {
+        OutputExecution::Copy(destination) => execute_copy(conn, plan, destination),
+        OutputExecution::Pretty(path) if path == "/dev/stdout" => {
+            print_pretty_query(conn, &plan.compile_sql())
+        }
+        OutputExecution::Pretty(path) => {
+            let table = conn
+                .query_duckbox_with_options(
+                    &plan.compile_sql(),
+                    &duckbox_options().with_color_mode(DuckboxColorMode::Never),
+                )
+                .context("failed to format pretty output")?;
+            fs::write(path, table).context("failed to write pretty output")
+        }
     }
 }
 
@@ -89,11 +96,12 @@ fn stream_summarize_copy_query(plan: &Plan, destination: &str) -> String {
     )
 }
 
-pub fn from(format: &InputFormat) -> Result<()> {
-    let plan = build_source_plan(format).context("failed to build input plan")?;
+pub fn from(format: InputFormat) -> Result<()> {
+    let plan = Plan::new(format.source, format.setup);
     if stdout_is_terminal() {
-        let conn = open_connection(&plan)?;
-        print_pretty_query(&conn, &plan.compile_sql()).context("failed to read input")
+        let output = OutputFormat::terminal()?;
+        let conn = open_connection(&plan, &output)?;
+        execute_to(&conn, &plan, &output).context("failed to read input")
     } else if plan.source.is_stream() {
         write_plan_and_payload(&plan, Some(duplicate_stdin()?), io::stdout().lock())
             .context("failed to read input")
@@ -169,8 +177,10 @@ fn transform(op: Op, context: &'static str) -> Result<()> {
             drop(input);
             None
         };
-        let execution = open_connection(&plan)
-            .and_then(|conn| print_pretty_query(&conn, &plan.compile_sql()))
+        let execution = OutputFormat::terminal()
+            .and_then(|output| {
+                open_connection(&plan, &output).and_then(|conn| execute_to(&conn, &plan, &output))
+            })
             .context(context);
         finish_stdin_payload(payload_thread);
         match execution {
@@ -182,10 +192,9 @@ fn transform(op: Op, context: &'static str) -> Result<()> {
     }
 }
 
-fn open_connection(plan: &Plan) -> Result<Connection> {
+fn open_connection(plan: &Plan, output: &OutputFormat) -> Result<Connection> {
     let conn = Connection::open_in_memory().context("failed to open duckdb")?;
-    storage::prepare(&conn, plan)?;
-    extensions::prepare(&conn, plan)?;
+    plugins::prepare(&conn, plan.setup.iter().chain(&output.setup))?;
     Ok(conn)
 }
 
@@ -247,20 +256,6 @@ fn parse_env_u64(var_name: &str) -> Option<u64> {
 
 fn stdout_is_terminal() -> bool {
     io::stdout().is_terminal()
-}
-
-fn build_source_plan(format: &InputFormat) -> Result<Plan> {
-    match format {
-        InputFormat::Path(path) => Ok(Plan::from_path(resolve_existing_path(path)?)),
-        InputFormat::S3(uri) => Ok(Plan::from_path(uri)),
-        _ => Ok(Plan::from_stream(format.read_fn())),
-    }
-}
-
-fn resolve_existing_path(path: &str) -> Result<String> {
-    let absolute = fs::canonicalize(Path::new(path))
-        .with_context(|| format!("failed to resolve input path `{path}`"))?;
-    Ok(absolute.to_string_lossy().into_owned())
 }
 
 #[cfg(test)]
@@ -378,14 +373,5 @@ mod tests {
             maximum_width_from_env(Some(132), Some(100)),
             DuckboxMaximumWidth::Cells(132)
         );
-    }
-
-    #[test]
-    fn preserves_s3_uri_in_source_plan() {
-        let uri = "s3://bucket/path/data.parquet";
-
-        let plan = build_source_plan(&InputFormat::S3(uri.into())).unwrap();
-
-        assert_eq!(plan, Plan::from_path(uri));
     }
 }
