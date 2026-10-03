@@ -50,6 +50,7 @@ cargo build --release
 - `dq order-by <clause>`
 - `dq describe`
 - `dq summarize`
+- `dq install <url> [--replace]`
 
 ### Preset formats
 
@@ -66,7 +67,18 @@ cargo build --release
 
 ### Plugins and global configuration
 
-Bundled formats and S3 support are TOML plugins embedded in the binary at build time. Adding a file under `plugins/` includes it automatically in subsequent builds. User plugins use the same schema and load without rebuilding dq.
+Bundled formats and S3 support are TOML plugins embedded in the binary at build time. Adding a file matching `plugins/*.toml` includes it automatically in subsequent builds. User plugins use the same schema and load without rebuilding dq.
+
+Install a user plugin from a URL pointing directly to its TOML file:
+
+```bash
+dq install https://github.com/someone/dq-formats/blob/main/plugins/rows.toml
+dq install --replace https://github.com/someone/dq-formats/blob/v1.2.0/plugins/rows.toml
+```
+
+GitHub file URLs are converted to raw download URLs. Other HTTP/HTTPS URLs, including raw GitHub URLs, work directly. The URL selects the branch, tag, or commit. dq validates the downloaded plugin and registration conflicts before saving it as `<plugin-id>.toml` in the global plugin directory. Installed IDs use letters, digits, `.`, `-`, or `_`, and cannot be `.` or `..`.
+
+An existing user plugin requires `--replace`. Replacement is atomic; a failed download or validation leaves the previous file intact. To replace a bundled plugin, disable it in configuration first. Installation saves the recipes; DuckDB extensions install and setup SQL executes when the plugin is used.
 
 User configuration lives at `$XDG_CONFIG_HOME/dq`, or `~/.config/dq` when `XDG_CONFIG_HOME` is unset. The optional `config.toml` controls bundled plugins and additional plugin directories:
 
