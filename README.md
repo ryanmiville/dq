@@ -40,6 +40,8 @@ cargo build --release
 
 ## Current command set
 
+Run `dq --skill` to print the self-contained custom plugin authoring skill as Markdown. The skill is embedded in the binary and matches its plugin API.
+
 - `dq from <format-or-path>`
 - `dq to <format-or-path>`
 - `dq sql`

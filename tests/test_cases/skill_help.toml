@@ -1,0 +1,10 @@
+cmd = '''
+{dq} --help | sed -n '/--skill/p'
+'''
+
+[[cases]]
+name = "advertises_skill_flag"
+input = ""
+[cases.expect]
+kind = "exact"
+stdout = "--skill"

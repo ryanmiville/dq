@@ -5,6 +5,8 @@ mod plan;
 mod plugins;
 mod stream;
 
+use std::io::{self, Write};
+
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use format::{InputFormat, OutputFormat};
@@ -15,10 +17,17 @@ use format::{InputFormat, OutputFormat};
 /// exchange framed query plans and raw input over stdin/stdout, and terminal writes pretty
 /// tables when stdout is a TTY.
 #[derive(Parser)]
-#[command(version)]
+#[command(
+    version,
+    arg_required_else_help = true,
+    args_conflicts_with_subcommands = true
+)]
 struct Cli {
+    #[arg(long, help = "Print the custom plugin authoring skill as Markdown")]
+    skill: bool,
+
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
@@ -129,7 +138,13 @@ fn main() {
 
 fn run() -> Result<()> {
     let cli = Cli::parse();
-    match cli.command {
+    if cli.skill {
+        io::stdout()
+            .lock()
+            .write_all(include_str!("../.agents/skills/dq-custom-plugin/SKILL.md").as_bytes())?;
+        return Ok(());
+    }
+    match cli.command.expect("clap requires a subcommand") {
         Command::Install { url, replace } => plugins::install(&url, replace),
         Command::From { format, expr } => cmd::from(InputFormat::parse(format, expr)?),
         Command::To { format, expr } => cmd::to(&OutputFormat::parse(format, expr)?),

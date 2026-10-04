@@ -1,28 +1,26 @@
 # Command testing pattern
 
-## Choose the test layer
+## Coverage boundary
 
-- **CLI behavior:** add cases to the nearest TOML fixture in `tests/test_cases/`. The harness launches the real binary through `bash -o pipefail -c`; exercise command behavior through that real-process path.
-- **Plan behavior:** add focused `src/plan.rs` unit tests for serialization, SQL lowering, nesting, or operation order.
-- **Transport behavior:** add `src/stream.rs` unit tests or `tests/stream_transport.rs` integration tests for framing, binary payload preservation, endpoint handoff or draining, large streams, and broken pipes. Construct command input through upstream `dq` stages; use transport tests when manual binary frames are required.
+Add coverage through TOML fixtures in `tests/test_cases/`. The harness launches the real binary through `bash -o pipefail -c`; plan lowering, operation order, and plugin setup are observable through execution or a `dq sql` endpoint. Retain existing unit and transport tests in validation.
 
-Complete test selection when every changed externally visible branch and every new internal invariant has a layer.
+If a material invariant cannot be exercised through fixtures, explain the gap and ask before adding a unit test or a new test outside the fixture harness.
 
 ## Fixture workflow
 
-1. Copy the nearest fixture shape and keep its end-to-end pipeline through `from`, the command under test, and an endpoint such as `to` or `sql`.
-2. Cover nominal behavior plus any edge or failure behavior introduced by the command. Derive empty-input expectations from the current pipeline and assert the observed result.
-3. Use `kind = "exact"` for expected stdout, `kind = "same"` for normalized stdout-versus-input comparison, and `kind = "stderr_contains"` with `success = false` for an expected failure.
-4. When adding a new fixture file, run `touch tests/fixtures.rs` so the directory-enumerating proc macro discovers it in incremental builds.
+1. Copy the nearest fixture shape. Read `dq_test_fixtures/src/lib.rs` for accepted fields and expectations; read `tests/common/mod.rs` when relying on normalization or process behavior.
+2. Cover a result that changes if the behavior regresses. For transforms, include ordered composition and a `dq sql` case. Derive empty-input expectations from the actual reader rather than assuming all readers behave alike. Done when each changed branch has a result or failure assertion.
+3. For plugins, isolate configuration under a temporary `XDG_CONFIG_HOME`. The harness already supplies an isolated directory; follow a `plugin_*.toml` analogue when a fixture needs its own files. Use cleanup traps for additional temporary directories. Copy the real manifest into fixtures for repository plugins so tests exercise the shipped recipes.
+4. When adding a fixture file, run `touch tests/fixtures.rs` so the directory-enumerating proc macro discovers it in incremental builds. Confirm the intended test appears in the focused run.
 
 The harness normalizes CRLF and per-line indentation/trailing whitespace; it does not perform arbitrary whitespace normalization.
 
 ## Validation
 
-Generated fixture test names combine the fixture stem and case name. Run the narrowest matching case first:
+Generated fixture test names combine the fixture stem and case name. Run the narrowest matching case first; for example:
 
 ```bash
-cargo test --test fixtures <fixture_stem>_<case_name>
+cargo test --test fixtures plugin_shared_setup_once_across_variants_and_stages
 ```
 
-Finish with `make check`.
+Run `make check` for Rust or repository plugin changes. For documentation-only edits, check links and execute changed examples without adding test files.
