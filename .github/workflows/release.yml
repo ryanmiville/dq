@@ -190,7 +190,7 @@ jobs:
     needs: [prepare, homebrew]
     if: ${{ needs.homebrew.outputs.pull_request != '' && needs.homebrew.outputs.head_sha != '' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     outputs:
       bottle-builds_url: ${{ steps.bottle-builds.outputs.url }}
       publish_url: ${{ steps.publish.outputs.url }}
@@ -202,7 +202,7 @@ jobs:
           GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
           HEAD_SHA: ${{ needs.homebrew.outputs.head_sha }}
         run: |
-          for attempt in $(seq 1 180); do
+          for attempt in $(seq 1 360); do
             run=$(gh api --method GET \
               repos/ryanmiville/homebrew-tap/actions/workflows/tests.yml/runs \
               -f event=pull_request \
@@ -211,7 +211,7 @@ jobs:
               --jq '.workflow_runs[0] // empty')
 
             if [ -z "$run" ]; then
-              echo "Waiting for the bottle workflow to start ($attempt/180)..."
+              echo "Waiting for the bottle workflow to start ($attempt/360)..."
               sleep 10
               continue
             fi
