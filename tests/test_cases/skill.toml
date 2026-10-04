@@ -1,0 +1,19 @@
+cmd = '''
+temp_dir=$(mktemp -d)
+trap 'rm -rf "$temp_dir"' EXIT
+export XDG_CONFIG_HOME="$temp_dir"
+mkdir -p "$XDG_CONFIG_HOME/dq"
+printf 'invalid config' > "$XDG_CONFIG_HOME/dq/config.toml"
+skill_path="$PWD/.agents/skills/dq-custom-plugin/SKILL.md"
+cd "$temp_dir"
+{dq} --skill > skill.md
+cmp "$skill_path" skill.md
+printf 'embedded skill matches\n'
+'''
+
+[[cases]]
+name = "prints_embedded_skill_without_loading_config"
+input = "unframed input is ignored"
+[cases.expect]
+kind = "exact"
+stdout = "embedded skill matches"

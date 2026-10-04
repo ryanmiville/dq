@@ -1,0 +1,9 @@
+cmd = "{dq} --skill sql"
+
+[[cases]]
+name = "rejects_subcommands"
+input = ""
+success = false
+[cases.expect]
+kind = "stderr_contains"
+text = "cannot be used with"
